@@ -1,5 +1,5 @@
 {
-  "release-type": "python",
+    "release-type": "python",
     "packages": {
         ".": {
             "changelog-path": "CHANGELOG.md",
