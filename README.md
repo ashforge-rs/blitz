@@ -1,6 +1,6 @@
 # blitz
 
-Production-grade FastAPI boilerplate. Structured, observable, and secure by default.
+FastAPI boilerplate. Structured, observable, and secure by default.
 
 [![CI](https://github.com/ashforge-rs/blitz/actions/workflows/ci.yml/badge.svg)](https://github.com/ashforge-rs/blitz/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://www.python.org)
