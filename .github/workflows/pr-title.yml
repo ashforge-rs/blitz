@@ -1,0 +1,107 @@
+name: PR Title
+
+on:
+    pull_request:
+        types: [opened, edited, reopened, synchronize]
+
+permissions:
+    pull-requests: write
+
+jobs:
+    check-title:
+        name: Conventional Commit Title
+        runs-on: ubuntu-latest
+        steps:
+            # ── 1. Validate the PR title ───────────────────────────────────────────
+            # Types and scopes mirror .github/conventional-commits.yml
+            - name: Validate PR title
+              id: lint
+              uses: amannn/action-semantic-pull-request@v5
+              continue-on-error: true
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  types: |
+                      feat
+                      fix
+                      perf
+                      refactor
+                      docs
+                      style
+                      test
+                      build
+                      ci
+                      chore
+                      revert
+                  scopes: |
+                      auth
+                      audit
+                      middleware
+                      routes
+                      config
+                      telemetry
+                      metrics
+                      errors
+                      log
+                      store
+                      example
+                      deps
+                      ci
+                  requireScope: false
+                  subjectPattern: "^(?![A-Z]).+"
+                  subjectPatternError: >
+                      The subject must start with a lowercase letter.
+                      See .github/conventional-commits.yml for the full conventions.
+
+            # ── 2. Create labels (idempotent) and apply pass / fail label ─────────
+            - name: Update PR labels
+              uses: actions/github-script@v7
+              env:
+                  OUTCOME: ${{ steps.lint.outcome }}
+              with:
+                  script: |
+                      const pass      = process.env.OUTCOME === 'success';
+                      const passLabel = { name: 'conventional commit', color: '0e8a16', description: 'PR title follows Conventional Commits' };
+                      const failLabel = { name: 'invalid title',       color: 'e11d48', description: 'PR title does not follow Conventional Commits' };
+                      const add       = pass ? passLabel : failLabel;
+                      const remove    = pass ? failLabel : passLabel;
+
+                      // Ensure both labels exist in the repo (no-op if already there)
+                      for (const label of [passLabel, failLabel]) {
+                        try {
+                          await github.rest.issues.createLabel({
+                            owner: context.repo.owner,
+                            repo:  context.repo.repo,
+                            ...label,
+                          });
+                        } catch {
+                          // 422 = already exists — safe to ignore
+                        }
+                      }
+
+                      // Apply the correct label
+                      await github.rest.issues.addLabels({
+                        owner:        context.repo.owner,
+                        repo:         context.repo.repo,
+                        issue_number: context.issue.number,
+                        labels:       [add.name],
+                      });
+
+                      // Remove the opposite label if present (throws 404 when absent — ignore)
+                      try {
+                        await github.rest.issues.removeLabel({
+                          owner:        context.repo.owner,
+                          repo:         context.repo.repo,
+                          issue_number: context.issue.number,
+                          name:         remove.name,
+                        });
+                      } catch {
+                        // Label wasn't on this PR — nothing to remove
+                      }
+
+                      if (!pass) {
+                        core.setFailed(
+                          'PR title does not follow Conventional Commits. ' +
+                          'See .github/conventional-commits.yml for allowed types and scopes.'
+                        );
+                      }

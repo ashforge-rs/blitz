@@ -1,0 +1,18 @@
+{
+    "recommendations": [
+        // Ruff — linter + formatter (replaces pylint, flake8, isort, black)
+        "charliermarsh.ruff",
+        // Python language support (IntelliSense, test runner, debugger)
+        "ms-python.python",
+        // Pylance — fast type-checking / completion on top of ms-python.python
+        "ms-python.vscode-pylance",
+        // REST client — send HTTP requests directly from .http files
+        "humao.rest-client",
+        // TOML syntax (pyproject.toml)
+        "tamasfe.even-better-toml",
+        // Dotenv syntax (.env files)
+        "mikestead.dotenv",
+        // GitLens — inline git blame / history
+        "eamodio.gitlens"
+    ]
+}

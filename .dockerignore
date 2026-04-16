@@ -1,0 +1,32 @@
+# Python / uv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Dev tooling
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+coverage.xml
+.coverage
+
+# IDE
+.vscode/
+.idea/
+
+# Secrets / keys
+*.pem
+*.key
+*.crt

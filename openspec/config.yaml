@@ -1,0 +1,106 @@
+schema: spec-driven
+
+context: |
+  ## Project
+  blitz — a production-grade FastAPI boilerplate designed to be cloned and
+  extended. The repository IS the template; every domain added here becomes a
+  reference for teams adopting the pattern. Changes must remain exemplary: clean,
+  minimal, and clearly demonstrating the idioms others will copy.
+
+  ## Tech stack
+  - Python 3.11+ with `from __future__ import annotations` in every file
+  - FastAPI + Starlette (ASGI); Uvicorn (uvloop + httptools) in production
+  - Pydantic v2 + pydantic-settings[dotenv] for models and configuration
+  - python-multipart for form/file upload support
+  - uv — the ONLY package/venv manager (never pip, never poetry)
+  - Ruff — lint + format (line-length 100, target py311)
+  - mypy — strict-ish: disallow_untyped_defs, check_untyped_defs, no_implicit_optional
+  - pytest + pytest-asyncio (asyncio_mode=auto) + Hypothesis for fuzz tests
+  - asgi-lifespan + httpx for integration tests
+  - loguru for structured logging (JSON in production, coloured in dev)
+  - prometheus-client + prometheus-fastapi-instrumentator for metrics
+  - limits library for rate limiting (pluggable storage backends)
+  - opentelemetry-sdk + opentelemetry-instrumentation-fastapi + opentelemetry-exporter-otlp-proto-http
+    for distributed tracing (OTLP HTTP, compatible with Jaeger / Tempo / Datadog / Honeycomb)
+
+  ## Architecture: service-oriented, SOLID domains
+  Each feature lives in `src/{domain}/` and follows this exact file layout:
+
+    models.py        — Pydantic: Entity, CreateXRequest, UpdateXRequest (all fields validated)
+    repository.py    — Data access only; depends on KeyValueStore[K, V] protocol
+    service.py       — Business logic only; depends on Repository (never on Store directly)
+    dependencies.py  — FastAPI Depends helpers: {X}ServiceDep, RequestContextDep
+    domain.py        — {X}Domain container, APIRouter, make_router(), bootstrap()
+
+  bootstrap(settings, **kwargs) wires:
+    InMemoryStore[K, V] → {X}Repository → {X}Service → {X}Domain
+
+  The domain module is registered in src/main.py:
+    app = create_app(domains=[my_domain])
+
+  src/example/ is the canonical reference domain — read it before proposing anything.
+
+  ## Storage abstraction
+  src/store/protocol.py — KeyValueStore[K, V] Protocol (interface, never import concrete)
+  src/store/memory.py   — InMemoryStore[K, V] (current default; swap in bootstrap() only)
+  Repositories always type their store parameter as KeyValueStore, never InMemoryStore.
+
+  ## RequestContext
+  Every service method receives ctx: RequestContext as its LAST positional parameter.
+  ctx lives at request.state.ctx (injected by RequestContextMiddleware).
+  Use ctx.set(key, value) to record provenance (e.g. last_created_{entity}_id).
+  Expose it in routes via RequestContextDep from {domain}/dependencies.py.
+  ctx is a plain dataclass — NOT an HTTP object — so services stay fully testable.
+
+  ## Extension points (the reason people adopt this template)
+  - AuthProvider protocol  → src/auth/protocol.py  (JWT, OAuth, API-key, etc.)
+  - AuditBackend ABC       → src/audit/backend.py  (DB, S3, stream, multi-backend)
+  - AuditIntegrity         → src/audit/integrity.py (sequence numbers, HMAC)
+  - Health checks          → async callables returning {"name": str, "healthy": bool}
+  - Rate limit storage     → any limits.storage.Storage (Redis, Memcached, …)
+  - Custom metrics         → src/metrics/registry.py helpers (counter, histogram)
+  - Extra context          → create_app(extra_context={"db": pool})
+  - OpenTelemetry tracing  → src/telemetry/setup.py; enable via OTEL_ENABLED=true + OTEL_ENDPOINT
+
+  ## Testing philosophy (all three layers required for every new domain)
+  Unit        tests/unit/test_{module}.py          — isolated, AsyncMock for ctx
+  Integration tests/integration/test_{domain}_routes.py — full HTTP via httpx + LifespanManager
+  Fuzz        tests/fuzz/test_fuzz.py              — Hypothesis @given for model bounds and invariants
+  Coverage is rendered as a Rich rounded-border table (root conftest.py plugin).
+  Quality gate: ruff format + check, mypy src/, pytest — all must pass before done.
+
+  ## Conventions
+  - `from __future__ import annotations` in every .py file
+  - TYPE_CHECKING guard for type-only imports
+  - Secrets must be SecretStr in Settings, never plain str
+  - No hardcoded values; everything configurable via env vars / .env
+  - Conventional commits preferred (feat:, fix:, refactor:, test:, chore:)
+  - PYTHONPATH=src — imports are always direct: `from config import Settings`
+  - Never import from `src.*` prefix
+
+rules:
+  proposal:
+    - State the motivation in one sentence before anything else
+    - Include a "Non-goals" section — critical for a template repo to keep scope tight
+    - Identify which extension point(s) are being added or modified
+    - Note whether this change is additive-only or modifies existing boilerplate code
+    - Keep under 400 words; no implementation details belong here
+    - Flag if the change affects the canonical example domain
+
+  design:
+    - Show the complete file tree for every new file and every modified file
+    - Describe how bootstrap() wires the new components (Store → Repo → Service → Domain)
+    - State which SOLID principle each layer boundary enforces
+    - Describe how RequestContext flows through the new service methods
+    - If a new extension point is added, show the protocol/ABC definition in full
+    - Note any Settings additions needed (.env.example must stay in sync)
+    - Describe the test strategy: what each of the three test layers will cover
+
+  tasks:
+    - One task per file created or significantly modified (granular is better)
+    - Always include separate tasks for: unit tests, integration tests, fuzz tests
+    - Always end with a quality-gate task: ruff + mypy + pytest all green
+    - Order tasks so each builds on the previous (models before repo, repo before service)
+    - Each task must be independently verifiable with a single command or file check
+    - Max ~45 minutes of work per task — split larger ones
+    - Reference the canonical example domain file when a task mirrors its structure
