@@ -19,9 +19,8 @@ updates:
         dependency-type: "development"
         update-types: ["minor", "patch"]
     ignore:
-      # Major runtime bumps are reviewed manually
+      # Major bumps are reviewed manually — open-pull-requests-limit keeps noise low
       - dependency-name: "*"
-        dependency-type: "production"
         update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
