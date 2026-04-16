@@ -50,7 +50,6 @@
                 "${input:sqliteDbPath}"
             ]
         },
-
         // Sequential thinking — structured chain-of-thought for multi-step
         // integration test planning. Useful for designing request sequences:
         // create -> verify -> mutate -> assert side-effects, and for
@@ -63,7 +62,6 @@
                 "@modelcontextprotocol/server-sequential-thinking"
             ]
         },
-
         // Filesystem — read/write access scoped strictly to src/ and tests/.
         // Allows AI agents to navigate and modify project code without
         // access to anything outside the source tree.
