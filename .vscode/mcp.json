@@ -1,0 +1,98 @@
+{
+    "servers": {
+        // GitHub — read/write PRs, issues, review comments, and query Actions
+        // workflow runs. Pairs well with the release-please and pr-title workflows.
+        // Requires a PAT with: repo, read:org, workflow scopes.
+        "github": {
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-github"
+            ],
+            "env": {
+                "GITHUB_PERSONAL_ACCESS_TOKEN": "${input:githubToken}"
+            }
+        },
+        // Fetch — issue arbitrary HTTP requests against the running local server
+        // or any external API. Useful for probing /health, /metrics, and custom
+        // routes without leaving the editor.
+        "fetch": {
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-fetch"
+            ]
+        },
+        // Postgres — direct SQL access for DB-backed domains. Provide the
+        // connection URL when prompted; it is stored securely in the OS keychain
+        // and never written to disk. Set to your local dev database.
+        "postgres": {
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-postgres",
+                "${input:postgresUrl}"
+            ]
+        },
+        // SQLite — inspect test database state between integration test steps.
+        // Useful for verifying writes landed, seeding fixture data, and asserting
+        // side effects without going through the HTTP layer.
+        // Point DB_PATH at your test database file, e.g. ./test.db or :memory:.
+        "sqlite": {
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-sqlite",
+                "${input:sqliteDbPath}"
+            ]
+        },
+        // Sequential thinking — structured chain-of-thought for multi-step
+        // integration test planning. Useful for designing request sequences:
+        // create -> verify -> mutate -> assert side-effects, and for
+        // reasoning through auth flows and rate-limit edge cases.
+        "sequential-thinking": {
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-sequential-thinking"
+            ]
+        },
+        // Filesystem — read/write access scoped strictly to src/ and tests/.
+        // Allows AI agents to navigate and modify project code without
+        // access to anything outside the source tree.
+        "filesystem": {
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-filesystem",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/tests"
+            ]
+        }
+    },
+    "inputs": [
+        {
+            "id": "githubToken",
+            "type": "promptString",
+            "description": "GitHub Personal Access Token (repo + workflow scopes)",
+            "password": true
+        },
+        {
+            "id": "postgresUrl",
+            "type": "promptString",
+            "description": "PostgreSQL connection URL  e.g. postgres://user:pass@localhost:5432/blitz",
+            "password": true
+        },
+        {
+            "id": "sqliteDbPath",
+            "type": "promptString",
+            "description": "Path to SQLite test database file  e.g. ./test.db"
+        }
+    ]
+}

@@ -1,0 +1,148 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# PR Title — Conventional Commits enforcement
+# ══════════════════════════════════════════════════════════════════════════════
+# Runs on every PR open / edit / reopen / push.
+#
+# What it does:
+#   1. Validates that the PR title follows the Conventional Commits spec.
+#   2. Applies a green "conventional commit" label on pass, or a red
+#      "invalid title" label on failure, then fails the check.
+#
+# Why PR title and not commit messages?
+#   When PRs are squash-merged, GitHub uses the PR title as the commit message.
+#   Enforcing the title ensures release-please can always parse the history.
+#
+# Allowed types and scopes mirror .github/conventional-commits.yml.
+# Add new scopes there AND in the `scopes:` list below to keep them in sync.
+#
+# To disable this workflow entirely, delete the file or add `if: false` to the
+# check-title job.
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: PR Title
+
+# on:
+#     pull_request:
+#         types: [opened, edited, reopened, synchronize]
+
+# Only needs write access to PR labels — no code or secret access required.
+permissions:
+    pull-requests: write
+
+jobs:
+    check-title:
+        name: Conventional Commit Title
+        runs-on: ubuntu-latest
+        steps:
+            # ── 1. Validate the PR title ───────────────────────────────────────────
+            # continue-on-error: true — we handle failure ourselves in step 2 so
+            # we can also update the label before failing the check.
+            # Types and scopes mirror .github/conventional-commits.yml.
+            - name: Validate PR title
+              id: lint
+              uses: amannn/action-semantic-pull-request@v6
+              continue-on-error: true
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  # ── Allowed commit types ───────────────────────────────────
+                  # Add or remove types here to match your team's conventions.
+                  # Keep in sync with .github/conventional-commits.yml.
+                  types: |
+                      feat
+                      fix
+                      perf
+                      refactor
+                      docs
+                      style
+                      test
+                      build
+                      ci
+                      chore
+                      revert
+                  # ── Allowed scopes ─────────────────────────────────────────
+                  # Scopes are optional (requireScope: false below).
+                  # Add a new scope here whenever you add a new domain or service.
+                  scopes: |
+                      auth
+                      audit
+                      middleware
+                      routes
+                      config
+                      telemetry
+                      metrics
+                      errors
+                      log
+                      store
+                      domains
+                      services
+                      example
+                      deps
+                      ci
+                  # ── Optional: require a scope on every PR ──────────────────
+                  # Set to true to mandate e.g. "feat(api): ..."
+                  requireScope: false
+                  # Subject must start with a lowercase letter.
+                  subjectPattern: "^(?![A-Z]).+"
+                  subjectPatternError: >
+                      The subject must start with a lowercase letter.
+                      See .github/conventional-commits.yml for the full conventions.
+
+                  # ── Optional: disallow breaking change footers ─────────────
+                  # Set to true to prevent "BREAKING CHANGE:" in commit bodies.
+                  # disallowScopes: []
+
+            # ── 2. Create labels (idempotent) and apply pass / fail label ─────────
+            # The github-script step creates both labels if they don't exist, then
+            # adds the appropriate one and removes the other.
+            - name: Update PR labels
+              uses: actions/github-script@v9
+              env:
+                  OUTCOME: ${{ steps.lint.outcome }}
+              with:
+                  script: |
+                      const pass      = process.env.OUTCOME === 'success';
+                      const passLabel = { name: 'conventional commit', color: '0e8a16', description: 'PR title follows Conventional Commits' };
+                      const failLabel = { name: 'invalid title',       color: 'e11d48', description: 'PR title does not follow Conventional Commits' };
+                      const add       = pass ? passLabel : failLabel;
+                      const remove    = pass ? failLabel : passLabel;
+
+                      // Ensure both labels exist in the repo (no-op if already there)
+                      for (const label of [passLabel, failLabel]) {
+                        try {
+                          await github.rest.issues.createLabel({
+                            owner: context.repo.owner,
+                            repo:  context.repo.repo,
+                            ...label,
+                          });
+                        } catch {
+                          // 422 = already exists — safe to ignore
+                        }
+                      }
+
+                      // Apply the correct label
+                      await github.rest.issues.addLabels({
+                        owner:        context.repo.owner,
+                        repo:         context.repo.repo,
+                        issue_number: context.issue.number,
+                        labels:       [add.name],
+                      });
+
+                      // Remove the opposite label if present (throws 404 when absent — ignore)
+                      try {
+                        await github.rest.issues.removeLabel({
+                          owner:        context.repo.owner,
+                          repo:         context.repo.repo,
+                          issue_number: context.issue.number,
+                          name:         remove.name,
+                        });
+                      } catch {
+                        // Label wasn't on this PR — nothing to remove
+                      }
+
+                      if (!pass) {
+                        core.setFailed(
+                          'PR title does not follow Conventional Commits. ' +
+                          'See .github/conventional-commits.yml for allowed types and scopes.'
+                        );
+                      }

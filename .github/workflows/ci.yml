@@ -1,0 +1,248 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# CI workflow
+# ══════════════════════════════════════════════════════════════════════════════
+# Runs on every push to master/main and on every pull request.
+#
+# Job graph:
+#
+#   lint ──┐
+#           ├── build (Docker, per changed service)
+#   test ──┘
+#   detect ─┘
+#
+# To disable a job, comment it out or add an `if: false` condition.
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: CI
+
+# on:
+#   push:
+#     branches: ["main", "master"]
+#   pull_request:
+#
+#   # ── Optional: run on a schedule (e.g. nightly) ──────────────────────────
+#   # schedule:
+#   #   - cron: "0 2 * * *"   # 02:00 UTC every day
+#
+#   # ── Optional: allow manual triggering from the Actions tab ──────────────
+#   # workflow_dispatch:
+
+# ── Global environment variables ─────────────────────────────────────────────
+# PYTHON_PRIMARY  — used for lint, type-check, coverage upload, and Docker builds.
+# PYTHON_LATEST   — added to the test matrix for forward-compat checks.
+# To drop 3.13 testing, remove it from the matrix in the `test` job below
+# (env vars cannot be referenced inside matrix: values, so they're literals there).
+env:
+  PYTHON_PRIMARY: "3.12"
+  PYTHON_LATEST: "3.13"
+
+# ── Concurrency: cancel in-flight runs for the same branch/PR ────────────────
+# This keeps queue depth low and avoids wasting runner minutes on stale commits.
+# Remove this block if you need every run to complete (e.g. release branches).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # lint — Ruff format check, lint, and mypy type-check.
+  #
+  # Runs once on PYTHON_PRIMARY only (linting is version-independent).
+  # ────────────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint & Type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v8.0.0
+        with:
+          version: "latest"
+          enable-cache: true # caches the uv download + the .venv between runs
+          python-version: ${{ env.PYTHON_PRIMARY }}
+
+      - name: Install dependencies
+        run: uv sync --frozen # fails if uv.lock is out of date
+
+      - name: Ruff format check
+        run: uv run ruff format --check src/ tests/
+
+      - name: Ruff lint
+        run: uv run ruff check src/ tests/
+
+      - name: mypy
+        run: uv run mypy src/
+
+      # ── Optional: bandit security scan ────────────────────────────────────
+      # Requires: uv add --dev bandit
+      # - name: Bandit security scan
+      #   run: uv run bandit -r src/ -ll
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # test — pytest on a matrix of Python versions.
+  #
+  # Coverage is enforced at 80 %. Adjust --cov-fail-under or remove it to relax.
+  # Coverage XML is uploaded to Codecov on PYTHON_PRIMARY only.
+  #
+  # To test against additional Python versions, add them to the matrix list
+  # AND update PYTHON_LATEST in the env block above.
+  # ────────────────────────────────────────────────────────────────────────────
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # keep testing other versions even if one fails
+      # matrix values cannot reference env context — kept as literals.
+      # Update these alongside PYTHON_PRIMARY / PYTHON_LATEST in the env block above.
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v8.0.0
+        with:
+          version: "latest"
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests
+        # --cov-fail-under=80 enforces minimum coverage. Remove to make it advisory.
+        run: uv run pytest --cov=src --cov-report=xml --cov-fail-under=80
+
+      # ── Optional: Codecov coverage upload ─────────────────────────────────
+      # Requires a free account at https://codecov.io and the CODECOV_TOKEN
+      # secret set in Settings → Secrets → Actions (for private repos).
+      # Public repos can omit the token.
+      - name: Upload coverage
+        uses: codecov/codecov-action@v6
+        if: matrix.python-version == env.PYTHON_PRIMARY
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false # set true to fail CI when upload fails
+          # token: ${{ secrets.CODECOV_TOKEN }}  # uncomment for private repos
+
+      # ── Optional: publish JUnit XML test results as a PR check annotation ─
+      # Requires: uv run pytest --junit-xml=test-results.xml
+      # - name: Publish test results
+      #   uses: EnricoMi/publish-unit-test-result-action@v2
+      #   if: always()
+      #   with:
+      #     files: test-results.xml
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # detect — Monorepo change detection.
+  #
+  # Diffs changed paths to determine which services under src/services/ need
+  # a Docker rebuild.  Outputs a JSON array consumed by the `build` matrix.
+  #
+  # Rebuild rules (evaluated in order):
+  #   1. pyproject.toml or uv.lock changed  → rebuild ALL services
+  #      (dependency change can affect every image)
+  #   2. src/domains/** changed              → rebuild ALL services
+  #      (shared domain code is bundled into every image)
+  #   3. src/services/<name>/** changed      → rebuild that service only
+  #
+  # Output: JSON array, e.g. ["api"] or ["api","admin"]
+  # If no services changed, has_changes=false and the `build` job is skipped.
+  # ────────────────────────────────────────────────────────────────────────────
+  detect:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.diff.outputs.services }}
+      has_changes: ${{ steps.diff.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history is required so we can diff against the merge base on PRs.
+          # On push events only HEAD^ is needed, but fetch-depth: 0 covers both.
+          fetch-depth: 0
+
+      - name: Compute changed services
+        id: diff
+        shell: bash
+        run: |
+          # On a PR: diff against the target branch base commit.
+          # On a push: diff against the previous commit (HEAD^).
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="HEAD^"
+          fi
+
+          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || git diff --name-only HEAD)
+
+          # Enumerate all service directories that exist in the tree.
+          ALL_SERVICES=$(find src/services -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
+
+          # Check for global triggers that force a full rebuild.
+          GLOBAL_TRIGGER=false
+          if echo "$CHANGED" | grep -qE '^(pyproject\.toml|uv\.lock|src/domains/)'; then
+            GLOBAL_TRIGGER=true
+          fi
+
+          # ── Optional: add more global triggers here ────────────────────────
+          # e.g. rebuild everything when the root Dockerfile changes:
+          # if echo "$CHANGED" | grep -q '^Dockerfile$'; then GLOBAL_TRIGGER=true; fi
+
+          SERVICES_JSON="["
+          FIRST=true
+          for svc in $ALL_SERVICES; do
+            # Skip services that do not have a Dockerfile — they are not images.
+            [[ ! -f "src/services/$svc/Dockerfile" ]] && continue
+
+            INCLUDE=false
+            if $GLOBAL_TRIGGER; then
+              INCLUDE=true
+            elif echo "$CHANGED" | grep -q "^src/services/$svc/"; then
+              INCLUDE=true
+            fi
+
+            if $INCLUDE; then
+              $FIRST || SERVICES_JSON+=","
+              SERVICES_JSON+="\"$svc\""
+              FIRST=false
+            fi
+          done
+          SERVICES_JSON+="]"
+
+          echo "services=$SERVICES_JSON" >> "$GITHUB_OUTPUT"
+          if [[ "$SERVICES_JSON" == "[]" ]]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "Changed services: $SERVICES_JSON"
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # build — Per-service Docker builds (matrix, driven by `detect` output).
+  #
+  # Runs only for services identified as changed.  Delegates to the reusable
+  # docker-build.yml workflow so the build logic stays in one place.
+  #
+  # Behaviour:
+  #   • Pull request  → build only (image is NOT pushed; validates the Dockerfile)
+  #   • master push   → build + push to GHCR
+  #
+  # To disable Docker builds entirely, comment out this job.
+  # To build on every push regardless of changes, remove the `if:` condition.
+  # ────────────────────────────────────────────────────────────────────────────
+  build:
+    name: Docker / ${{ matrix.service }}
+    needs: [lint, test, detect]
+    if: needs.detect.outputs.has_changes == 'true'
+    strategy:
+      fail-fast: false # build remaining services even if one fails
+      matrix:
+        service: ${{ fromJson(needs.detect.outputs.services) }}
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      service: ${{ matrix.service }}
+      # Push only on direct pushes to master, not on PRs.
+      push: ${{ github.ref == 'refs/heads/master' && github.event_name == 'push' }}
+    secrets: inherit # forwards GITHUB_TOKEN (and any repo secrets) to the reusable workflow

@@ -1,0 +1,155 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Reusable Docker build workflow
+# ══════════════════════════════════════════════════════════════════════════════
+# Called by ci.yml (per-commit builds) and release-please.yml (versioned
+# releases).  Never triggered directly.
+#
+# What it does:
+#   1. Checks out the repo.
+#   2. Sets up Docker Buildx with GitHub Actions cache (type=gha) so layer
+#      cache is shared across workflow runs without an external registry.
+#   3. Logs in to GHCR (only when push=true).
+#   4. Derives image tags from the commit SHA, branch, and any extra tags
+#      passed by the caller (e.g. a semver string on release).
+#   5. Builds src/services/<service>/Dockerfile.
+#   6. Pushes to ghcr.io/<owner>/blitz-<service> when push=true.
+#
+# Inputs:
+#   service    — directory name under src/services/  (e.g. "api")
+#   push       — whether to push the built image to GHCR (default: false)
+#   extra_tags — newline-separated additional tags appended to the image
+#                (e.g. "v1.2.3" on a release run)
+#
+# Caching strategy:
+#   Two GHA cache scopes are used per service:
+#     <service>-deps    — the builder stage up to and including `uv sync`
+#                         (only invalidated by pyproject.toml / uv.lock changes)
+#     <service>-runtime — the full image including src/ copy
+#   Using mode=max caches all intermediate layers, not just the final image.
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: Docker Build
+
+# on:
+#     workflow_call:
+#         inputs:
+#             service:
+#                 required: true
+#                 type: string
+#                 description: "Service name (must match src/services/<service>/)"
+#             push:
+#                 required: false
+#                 type: boolean
+#                 default: false
+#                 description: "Push the image to GHCR after a successful build"
+#             extra_tags:
+#                 required: false
+#                 type: string
+#                 default: ""
+#                 description: "Newline-separated additional image tags (e.g. semver on release)"
+
+jobs:
+    build:
+        name: Build ${{ inputs.service }}
+        runs-on: ubuntu-latest
+
+        permissions:
+            contents: read
+            packages: write # required to push to ghcr.io
+
+        steps:
+            - uses: actions/checkout@v6
+
+            # Buildx is required for advanced cache features (type=gha, mode=max).
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            # Login is skipped on PR builds (push=false) to avoid needing
+            # write access from fork-originated pull requests.
+            - name: Log in to GHCR
+              if: inputs.push
+              uses: docker/login-action@v3
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            # ── Optional: log in to Docker Hub instead of (or in addition to) GHCR ─
+            # - name: Log in to Docker Hub
+            #   if: inputs.push
+            #   uses: docker/login-action@v3
+            #   with:
+            #     username: ${{ secrets.DOCKERHUB_USERNAME }}
+            #     password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+            # Derives OCI-standard labels and tag strings from git metadata.
+            # Produces two automatic tags:
+            #   sha-<short-sha>   — e.g. sha-a1b2c3d  (every build)
+            #   latest            — only on direct pushes to master
+            # Any extra_tags passed by the caller are appended as-is.
+            - name: Compute image metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  # Image name: ghcr.io/<owner>/blitz-<service>
+                  # e.g.  ghcr.io/ashforge-rs/blitz-api
+                  # To use a different registry or naming scheme, change this.
+                  images: ghcr.io/${{ github.repository_owner }}/blitz-${{ inputs.service }}
+                  tags: |
+                      type=sha,prefix=sha-,format=short
+                      type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+                      ${{ inputs.extra_tags }}
+
+            - name: Build (and push) ${{ inputs.service }}
+              uses: docker/build-push-action@v6
+              with:
+                  # Build context is always the repo root so the Dockerfile can
+                  # COPY src/ (the full monorepo source) in one step.
+                  context: .
+                  file: src/services/${{ inputs.service }}/Dockerfile
+                  push: ${{ inputs.push }}
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
+
+                  # ── Layer cache (GHA cache backend) ───────────────────────
+                  # Two named scopes isolate the deps layer from the src layer:
+                  #   <service>-deps    → uv sync layer; only busts when lock file changes
+                  #   <service>-runtime → final image; busts on any src/ change
+                  # mode=max caches ALL intermediate layers, not just the final one.
+                  cache-from: |
+                      type=gha,scope=${{ inputs.service }}-deps
+                      type=gha,scope=${{ inputs.service }}-runtime
+                  cache-to: |
+                      type=gha,scope=${{ inputs.service }}-deps,mode=max
+                      type=gha,scope=${{ inputs.service }}-runtime,mode=max
+
+                  # ── Optional: registry cache instead of GHA cache ─────────
+                  # Useful when self-hosting runners without a GHA cache service.
+                  # Requires push access to the registry and an extra image ref.
+                  # cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/blitz-${{ inputs.service }}:buildcache
+                  # cache-to:   type=registry,ref=ghcr.io/${{ github.repository_owner }}/blitz-${{ inputs.service }}:buildcache,mode=max
+
+                  # provenance=false keeps the manifest simple (single-platform).
+                  # Set to true to include SLSA provenance attestations.
+                  provenance: false
+
+                  # ── Optional: multi-platform builds ───────────────────────
+                  # Uncomment to build for both AMD64 and ARM64 (e.g. Apple Silicon, AWS Graviton).
+                  # Note: cross-compilation significantly increases build time.
+                  # platforms: linux/amd64,linux/arm64
+
+            # ── Optional: scan the built image for vulnerabilities ─────────────
+            # Runs Trivy against the pushed image and uploads results to GitHub
+            # Security / Code Scanning (requires push=true and Actions write perms).
+            # - name: Scan image with Trivy
+            #   if: inputs.push
+            #   uses: aquasecurity/trivy-action@master
+            #   with:
+            #     image-ref: ghcr.io/${{ github.repository_owner }}/blitz-${{ inputs.service }}:latest
+            #     format: sarif
+            #     output: trivy.sarif
+            # - name: Upload Trivy results to GitHub Security
+            #   if: inputs.push
+            #   uses: github/codeql-action/upload-sarif@v3
+            #   with:
+            #     sarif_file: trivy.sarif

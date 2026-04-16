@@ -1,0 +1,65 @@
+# Conventional Commits configuration for blitz
+# https://www.conventionalcommits.org/en/v1.0.0/
+#
+# This file is the canonical reference for commit and PR title conventions.
+# The pr-title.yml workflow enforces these rules on every PR.
+#
+# Format:  <type>(<scope>): <subject>
+#          ^--- required   ^--- optional   ^--- required, lowercase first letter
+
+# ── Types ─────────────────────────────────────────────────────────────────────
+# Maps to release-please bump logic:
+#   feat  → minor  |  fix / perf  → patch  |  everything else → no release
+types:
+  - feat # New feature or capability
+  - fix # Bug fix
+  - perf # Performance improvement (patch bump)
+  - refactor # Code restructure with no behaviour change
+  - docs # Documentation only
+  - style # Formatting, whitespace — no logic change
+  - test # Add or correct tests
+  - build # Build system, packaging, uv deps
+  - ci # CI/CD workflow changes
+  - chore # Maintenance that doesn't fit the above
+  - revert # Reverts a previous commit
+
+# Breaking changes: append ! after the type/scope, e.g.  feat!: drop Python 3.10
+# or add a BREAKING CHANGE: footer in the commit body.
+
+# ── Scopes ────────────────────────────────────────────────────────────────────
+# Scopes are optional but should match a module under src/ when used.
+scopes:
+  - auth
+  - audit
+  - middleware
+  - routes
+  - config
+  - telemetry
+  - metrics
+  - errors
+  - log
+  - store
+  - domains # domain modules under src/domains/
+  - services # FastAPI service instances under src/services/
+  - example
+  - deps # dependency upgrades
+  - ci # CI/CD
+
+# ── Subject rules ─────────────────────────────────────────────────────────────
+subject:
+  # Must start with a lowercase letter (no "Fix bug", use "fix bug")
+  pattern: "^(?![A-Z]).+"
+  # Must not end with a period
+  no-trailing-period: true
+  # Minimum / maximum length (excluding type/scope prefix)
+  min-length: 4
+  max-length: 72
+
+# ── Examples ──────────────────────────────────────────────────────────────────
+# ✅  feat(auth): add JWT refresh token support
+# ✅  fix(middleware): correct XFF header parsing for trusted proxies
+# ✅  ci: add mypy step to lint job
+# ✅  feat!: remove Python 3.10 support
+# ❌  Fix bug           (uppercase, no type)
+# ❌  feat: .           (too short, starts with period)
+# ❌  feat(unknown): …  (scope not in the list above)

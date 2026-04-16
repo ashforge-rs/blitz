@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars and fill in values.
+# Never commit terraform.tfvars — it is gitignored.
+
+github_token    = "ghp_..."
+github_owner    = "ashforge-rs"
+repository_name = "blitz"

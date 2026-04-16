@@ -1,0 +1,187 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blitz"
+version = "0.1.0"
+description = "FastAPI boilerplate"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.136.0",
+  "uvicorn[standard]>=0.44.0",
+  "orjson>=3.11.8",
+  "pydantic-settings>=2.13.1",
+  "loguru>=0.7.3",
+  "limits>=5.8.0",
+  "prometheus-client>=0.25.0",
+  "prometheus-fastapi-instrumentator>=7.1.0",
+  "python-multipart>=0.0.26",
+  "opentelemetry-sdk>=1.41.0",
+  "opentelemetry-instrumentation-fastapi>=0.62b0",
+  "opentelemetry-exporter-otlp-proto-http>=1.41.0",
+  "returns>=0.27.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0.3",
+  "pytest-asyncio>=1.3.0",
+  "pytest-cov>=7.1.0",
+  "httpx>=0.28.1",
+  "ruff>=0.15.10",
+  "hypothesis>=6.152.1",
+  "rich>=15.0.0",
+  "asgi-lifespan>=2.1.0",
+  "mypy>=1.20.1",
+  "dirty-equals>=0.11",
+]
+
+[tool.hatch.build.targets.wheel]
+sources = { "src" = "" }
+packages = [
+  "src/app.py",
+  "src/config.py",
+  "src/context.py",
+  "src/lifespan.py",
+  "src/main.py",
+  "src/service.py",
+  "src/auth",
+  "src/audit",
+  "src/errors",
+  "src/log",
+  "src/metrics",
+  "src/middleware",
+  "src/routes",
+  "src/store",
+  "src/telemetry",
+  "src/domains",
+  "src/services",
+]
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes
+  "I",    # isort
+  "UP",   # pyupgrade
+  "B",    # flake8-bugbear
+  "SIM",  # flake8-simplify
+  "RET",  # flake8-return — flag implicit None returns and redundant else
+  "RUF",  # Ruff-native rules
+  "TCH",  # flake8-type-checking — enforce TYPE_CHECKING guards
+  "ANN",  # flake8-annotations — require type annotations on all defs
+  "ERA",  # eradicate — flag commented-out code
+  "PTH",  # flake8-use-pathlib — prefer pathlib over os.path
+  "TRY",  # flake8-tryceratops — discourage bare except, long try blocks
+  "EM",   # flake8-errmsg — no string literals directly in raise
+  "PERF", # perflint — avoid O(n) anti-patterns
+]
+ignore = [
+  "ANN101", # missing type for `self`
+  "ANN102", # missing type for `cls`
+  "ANN401", # Any is allowed where explicitly needed
+  "TRY003", # allow long exception messages (we use ItemError, not raw strings)
+  "EM101",  # allow string in raise for HTTPException detail
+  "EM102",  # allow f-string in raise
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: no annotation requirements, allow commented examples, allow broad raises
+"tests/**" = ["ANN", "ERA", "TRY", "EM", "PTH", "TCH"]
+# Framework/infra files: These predate the strict rule set.
+# Remove entries here as each file is brought up to standard.
+"src/app.py" = ["ANN", "TCH", "ERA"]
+"src/config.py" = ["ANN"]
+"src/context.py" = ["ANN", "TCH"]
+"src/lifespan.py" = ["ANN"]
+"src/service.py" = ["ANN"]
+"src/main.py" = ["ANN", "ERA"]
+"src/audit/**" = ["ANN", "TCH"]
+"src/auth/**" = ["ANN", "TCH"]
+"src/errors/**" = ["ANN", "TCH"]
+"src/log/**" = ["ANN"]
+"src/metrics/**" = ["ANN"]
+"src/middleware/**" = ["ANN", "TCH"]
+"src/routes/**" = ["ANN", "TCH"]
+"src/store/**" = ["ANN", "TCH"]
+"src/telemetry/**" = ["ANN", "TCH"]
+"src/services/**" = ["ANN", "ERA"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+  "app",
+  "config",
+  "context",
+  "auth",
+  "audit",
+  "errors",
+  "log",
+  "metrics",
+  "middleware",
+  "routes",
+  "service",
+  "lifespan",
+  "store",
+  "telemetry",
+  "domains",
+  "services",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --no-header"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["src/main.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+# Resolve all packages from mypy_path (src/) rather than site-packages.
+# Without this, mypy finds the installed blitz wheel in .venv and complains
+# that first-party packages like `example` and `store` lack py.typed markers.
+explicit_package_bases = true
+
+# --- Strictness ---
+strict = true
+# Even stricter than strict:
+warn_unreachable = true       # flag dead branches (e.g. missing Err case)
+warn_return_any = true        # no silent Any leaking out of typed functions
+disallow_any_explicit = false # Any is allowed when you write it explicitly
+# result library ships py.typed so mypy can check Ok/Err fully.
+plugins = []
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+# Test functions take pytest fixtures as untyped parameters; annotating them
+# adds noise without any real safety benefit.  Real type errors in test helpers
+# and internal classes are still caught by check_untyped_defs = true above.
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+  "prometheus_client.*",
+  "limits.*",
+  "prometheus_fastapi_instrumentator.*",
+  "opentelemetry.*",
+]
+ignore_missing_imports = true
+ignore_errors = true

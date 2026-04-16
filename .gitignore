@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+wheels/
+sdist/
+*.spec
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+
+# Ruff
+.ruff_cache/
+
+# pytest
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Type checker caches
+.mypy_cache/
+.dmypy.json
+.pyright/
+
+# OpenTofu / Terraform
+infra/.terraform/
+# infra/.terraform.lock.hcl is intentionally tracked — required for reproducible
+# provider installs and for Dependabot to detect provider version updates.
+infra/terraform.tfvars
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/crash.log
+infra/override.tf
+infra/*_override.tf
