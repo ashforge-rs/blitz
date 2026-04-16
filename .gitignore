@@ -48,3 +48,13 @@ Thumbs.db
 .mypy_cache/
 .dmypy.json
 .pyright/
+
+# OpenTofu / Terraform
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfvars
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/crash.log
+infra/override.tf
+infra/*_override.tf

@@ -13,6 +13,8 @@
         // Dotenv syntax (.env files)
         "mikestead.dotenv",
         // GitLens — inline git blame / history
-        "eamodio.gitlens"
+        "eamodio.gitlens",
+        // OpenTofu / Terraform — syntax, validation, hover docs for .tf files
+        "hashicorp.terraform"
     ]
 }
