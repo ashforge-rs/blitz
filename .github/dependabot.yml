@@ -5,10 +5,24 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    rebase-strategy: "auto"
+    commit-message:
+      prefix: "build(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: "scope"
     groups:
-      python-deps:
-        patterns: ["*"]
+      python-runtime:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]
+      python-dev:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+    ignore:
+      # Major runtime bumps are reviewed manually
+      - dependency-name: "*"
+        dependency-type: "production"
+        update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
 
@@ -17,7 +31,15 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
+    rebase-strategy: "auto"
+    commit-message:
+      prefix: "ci(deps)"
+      include: "scope"
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
     labels:
       - "dependencies"
       - "github-actions"
