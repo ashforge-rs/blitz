@@ -62,7 +62,7 @@ jobs:
 
             # Buildx is required for advanced cache features (type=gha, mode=max).
             - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v3
+              uses: docker/setup-buildx-action@v4
 
             # Login is skipped on PR builds (push=false) to avoid needing
             # write access from fork-originated pull requests.
