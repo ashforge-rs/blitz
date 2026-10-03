@@ -20,7 +20,7 @@ context: |
   - loguru for structured logging (JSON in production, coloured in dev)
   - prometheus-client + prometheus-fastapi-instrumentator for metrics
   - limits library for rate limiting (pluggable storage backends)
-  - opentelemetry-sdk + opentelemetry-instrumentation-fastapi + opentelemetry-exporter-otlp-proto-http
+  - opentelemetry-sdk + opentelemetry-exporter-otlp-proto-http (FastAPI native telemetry)
     for distributed tracing (OTLP HTTP, compatible with Jaeger / Tempo / Datadog / Honeycomb)
 
   ## Architecture: service-oriented, SOLID domains
