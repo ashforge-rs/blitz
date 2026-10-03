@@ -9,11 +9,14 @@ collection; this plugin handles the display).
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
+if TYPE_CHECKING:
+    import pytest
 
 
-def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # noqa: ARG001
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Hook called after the full test run.  Renders the coverage table."""
     try:
         import coverage
@@ -26,7 +29,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
 
     cov_data = coverage.CoverageData()
     cov_file = os.environ.get("COVERAGE_FILE", ".coverage")
-    if not os.path.exists(cov_file):
+    if not Path(cov_file).exists():
         return
 
     cov_data.read()
