@@ -56,7 +56,7 @@ class AuditMiddleware:
                 from starlette.requests import Request
 
                 request = Request(scope)
-                ctx = getattr(scope.get("state"), "ctx", None)
+                ctx = getattr(request.state, "ctx", None)
 
                 client_ip = _resolve_ip(request, trusted)
                 client = request.client
