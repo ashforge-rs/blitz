@@ -2,7 +2,7 @@
 # ────────────────────────────────────────────────
 # Stage 1: builder — install dependencies via uv
 # ────────────────────────────────────────────────
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
@@ -19,7 +19,7 @@ RUN uv sync --frozen --no-dev
 # ────────────────────────────────────────────────
 # Stage 2: runtime — minimal production image
 # ────────────────────────────────────────────────
-FROM python:3.11-slim AS runtime
+FROM python:3.12-slim AS runtime
 
 RUN useradd --system --no-create-home --uid 1001 appuser
 
