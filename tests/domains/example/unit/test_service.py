@@ -229,5 +229,3 @@ async def test_delete_emits_audit_event(repo: ItemRepository, ctx: MagicMock) ->
     from audit.backend import AuditResult
 
     assert evt.result == AuditResult.SUCCESS
-
-
