@@ -31,18 +31,15 @@ class RequestContextMiddleware:
         headers = dict(scope.get("headers", []))
         request_id = headers.get(b"x-request-id", b"").decode() or uuid4().hex
 
-        # Store context in scope["state"] so route handlers can reach it via
-        # request.state.ctx without depending on Starlette's Request object here.
-        if "state" not in scope:
-            from starlette.datastructures import State
-
-            scope["state"] = State()
-
+        # Store context on request.state so route handlers can reach it via
+        # request.state.ctx.  Go through Request.state rather than scope["state"]
+        # directly: under a real ASGI server the latter is the plain lifespan-state
+        # dict, which Starlette wraps for attribute access.
         from starlette.requests import Request
 
         request = Request(scope, receive, send)
         ctx = RequestContext(request=request, request_id=request_id)
-        scope["state"].ctx = ctx
+        request.state.ctx = ctx
 
         token = _ctx_var.set(ctx)
 

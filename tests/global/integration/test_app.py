@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from asgi_lifespan import LifespanManager
 from fastapi import Depends, Request
 from httpx import ASGITransport, AsyncClient
 
@@ -247,3 +248,35 @@ async def test_audit_event_dispatched(test_settings):
     assert ev.status_code == 200
     assert ev.duration_ms is not None and ev.duration_ms > 0
     assert ev.request_id != ""
+
+
+async def test_request_context_with_dict_lifespan_state(app):
+    """ASGI servers pass ``scope["state"]`` as a plain dict (lifespan state)."""
+    messages: list[dict] = []
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/live",
+        "raw_path": b"/live",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"host", b"test"), (b"x-request-id", b"req-1")],
+        "client": ("127.0.0.1", 1234),
+        "server": ("test", 80),
+        "state": {},
+    }
+
+    async def receive() -> dict:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: dict) -> None:
+        messages.append(message)
+
+    async with LifespanManager(app):
+        await app(scope, receive, send)
+
+    assert messages[0]["status"] == 200
+    assert scope["state"]["ctx"].request_id == "req-1"
