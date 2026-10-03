@@ -16,6 +16,7 @@ from errors.handlers import register_error_handlers
 from lifespan import lifespan
 from middleware.stack import register_middleware
 from routes import health, metrics
+from telemetry.setup import telemetry_config
 
 HealthCheckFn = Callable[[], Coroutine[Any, Any, dict[str, Any]]]
 
@@ -118,6 +119,8 @@ def create_app(
         docs_url=None if is_prod else "/docs",
         redoc_url=None if is_prod else "/redoc",
         openapi_url=None if is_prod else "/openapi.json",
+        # Native FastAPI OpenTelemetry; driven by OTEL_* settings (see telemetry/setup.py)
+        telemetry=telemetry_config(settings),
     )
 
     # --- App state ---
@@ -161,17 +164,5 @@ def create_app(
             app.include_router(domain_module.make_router())
         if hasattr(domain_module, "register_exception_handlers"):
             domain_module.register_exception_handlers(app)
-
-    # --- OpenTelemetry FastAPI instrumentation ---
-    # Instrument after routes are registered so span names resolve to route paths.
-    # setup_telemetry() (called in lifespan startup) sets the global TracerProvider
-    # before any requests arrive; this call patches the middleware to create spans.
-    if settings.OTEL_ENABLED:
-        try:
-            from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-
-            FastAPIInstrumentor.instrument_app(app)
-        except Exception:
-            pass  # Already instrumented (e.g. multiple create_app() calls in tests)
 
     return app

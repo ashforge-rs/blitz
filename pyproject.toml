@@ -18,7 +18,6 @@ dependencies = [
   "prometheus-fastapi-instrumentator>=8.1.0",
   "python-multipart>=0.0.32",
   "opentelemetry-sdk>=1.45.0",
-  "opentelemetry-instrumentation-fastapi>=0.66b0",
   "opentelemetry-exporter-otlp-proto-http>=1.45.0",
   "returns>=0.29.0",
 ]

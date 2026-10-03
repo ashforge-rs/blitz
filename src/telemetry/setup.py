@@ -8,7 +8,24 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 if TYPE_CHECKING:
+    from fastapi.telemetry import TelemetryConfig
+
     from config import Settings
+
+
+def telemetry_config(settings: Settings) -> TelemetryConfig:
+    """
+    Build the ``telemetry=`` argument for ``FastAPI()``.
+
+    FastAPI instruments requests natively and reads the global providers, so
+    no separate instrumentor is needed.  ``Settings`` stays the single source
+    of truth: FastAPI's own env-var exporter setup is turned off so that
+    ``OTEL_ENABLED=false`` really is a no-op and ``setup_telemetry`` is the
+    only place an exporter gets attached.
+    """
+    if not settings.OTEL_ENABLED:
+        return {"tracing": False, "metrics": False, "logs": False, "auto_configure": False}
+    return {"auto_configure": False}
 
 
 def setup_telemetry(settings: Settings) -> None:
@@ -21,8 +38,8 @@ def setup_telemetry(settings: Settings) -> None:
     Honeycomb, etc. — and distributed traces start flowing.
 
     The tracer provider is set globally via ``trace.set_tracer_provider()``.
-    ``FastAPIInstrumentor`` (wired in ``create_app``) automatically picks it
-    up once it is set.
+    FastAPI's native telemetry (configured in ``create_app`` through
+    ``telemetry_config``) picks it up once it is set.
     """
     if not settings.OTEL_ENABLED:
         return
