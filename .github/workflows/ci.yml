@@ -118,7 +118,7 @@ jobs:
       # secret set in Settings → Secrets → Actions (for private repos).
       # Public repos can omit the token.
       - name: Upload coverage
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         if: matrix.python-version == env.PYTHON_PRIMARY
         with:
           files: coverage.xml
