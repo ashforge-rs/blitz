@@ -8,18 +8,18 @@ version = "0.1.1"
 description = "FastAPI boilerplate"
 requires-python = ">=3.11"
 dependencies = [
-  "fastapi>=0.142.2",
+  "fastapi>=0.162.2",
   "uvicorn[standard]>=0.54.0",
-  "orjson>=3.12.0",
-  "pydantic-settings>=2.15.0",
+  "orjson>=3.13.0",
+  "pydantic-settings>=2.16.2",
   "loguru>=0.7.3",
   "limits>=5.8.0",
   "prometheus-client>=0.26.0",
   "prometheus-fastapi-instrumentator>=8.1.0",
-  "python-multipart>=0.0.32",
-  "opentelemetry-sdk>=1.45.0",
-  "opentelemetry-exporter-otlp-proto-http>=1.45.0",
-  "returns>=0.29.0",
+  "python-multipart>=0.0.33",
+  "opentelemetry-sdk>=1.45.2",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.2",
+  "returns>=0.30.0",
 ]
 
 [dependency-groups]
