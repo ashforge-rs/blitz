@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           version: "latest"
           enable-cache: true # caches the uv download + the .venv between runs
@@ -100,7 +100,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           version: "latest"
           enable-cache: true
