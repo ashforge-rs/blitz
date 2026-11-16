@@ -25,11 +25,11 @@ dependencies = [
 [dependency-groups]
 dev = [
   "pytest>=9.2.0",
-  "pytest-asyncio>=1.4.1",
+  "pytest-asyncio>=1.5.0",
   "pytest-cov>=7.1.0",
   "httpx>=0.28.1",
-  "ruff>=0.17.3",
-  "hypothesis>=6.170.14",
+  "ruff>=0.17.5",
+  "hypothesis>=6.170.15",
   "rich>=15.0.0",
   "asgi-lifespan>=2.1.0",
   "mypy>=2.4.1",
