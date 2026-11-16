@@ -89,7 +89,7 @@ jobs:
             # Any extra_tags passed by the caller are appended as-is.
             - name: Compute image metadata
               id: meta
-              uses: docker/metadata-action@v5
+              uses: docker/metadata-action@v6
               with:
                   # Image name: ghcr.io/<owner>/blitz-<service>
                   # e.g.  ghcr.io/ashforge-rs/blitz-api
