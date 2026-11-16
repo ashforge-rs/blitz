@@ -58,7 +58,7 @@ jobs:
             packages: write # required to push to ghcr.io
 
         steps:
-            - uses: actions/checkout@v6
+            - uses: actions/checkout@v7
 
             # Buildx is required for advanced cache features (type=gha, mode=max).
             - name: Set up Docker Buildx
