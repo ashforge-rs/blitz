@@ -73,7 +73,7 @@ InMemoryStore[K, V] → {X}Repository(store=...) → {X}Service(repository=...) 
 ```
 
 - `InMemoryStore` must only appear in `bootstrap()`, never in repo/service constructors.
-- The domain instance must be stored at `app.state.domains[module.__name__]` (handled by `lifespan.py`).
+- The domain instance is registered by `lifespan.py` (by module name and by type).
 - `make_router()` must return the module-level `_router`, not create a new one per call.
 
 ### 2c. RequestContext flow
@@ -86,7 +86,7 @@ Every `async def` method on `{X}Service` must:
 ### 2d. Dependency injection
 
 `dependencies.py` must:
-- Resolve the domain via `request.app.state.domains["{module}"]` — not a global.
+- Resolve the domain via `state.get_domain(request, {X}Domain)` — not a global, not a string key, no `cast()`.
 - Expose typed aliases (`{X}ServiceDep`, `RequestContextDep`) using `Annotated[..., Depends(...)]`.
 - Never instantiate services or stores directly.
 
@@ -152,7 +152,7 @@ Beyond zero errors, inspect manually:
 - [ ] Missing return type on any public function in `src/`?
 - [ ] `cast()` used to paper over an architectural type mismatch?
 - [ ] `Optional[X]` instead of `X | None` (PEP 604 style required)?
-- [ ] `from __future__ import annotations` missing from any `.py` file?
+- [ ] `from __future__ import annotations` present in any `.py` file? (redundant on 3.14+; remove)
 
 ---
 

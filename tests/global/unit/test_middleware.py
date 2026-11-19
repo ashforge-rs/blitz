@@ -1,7 +1,5 @@
 """Unit tests for the ASGI middleware, driven with raw ASGI scope/receive/send."""
 
-from __future__ import annotations
-
 import asyncio
 import ipaddress
 import time

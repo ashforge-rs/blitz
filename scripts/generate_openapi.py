@@ -7,8 +7,6 @@ Usage:
     uv run python scripts/generate_openapi.py --out docs/openapi.json
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

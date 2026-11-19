@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import inspect
 from collections.abc import Callable  # noqa: TC003 — used at runtime in DomainRouter.add_api_route
 from functools import wraps

@@ -41,6 +41,7 @@ src/
 ├── context.py          # RequestContext dataclass + ContextVar helpers
 ├── lifespan.py         # Startup / graceful-shutdown lifecycle
 ├── service.py          # Base Service class — extend for every domain service
+├── state.py            # get_domain(): typed lookup of bootstrapped domains
 ├── store/
 │   ├── protocol.py     # KeyValueStore[K,V] Protocol (Dependency Inversion)
 │   └── memory.py       # InMemoryStore — default, test-friendly implementation
@@ -126,7 +127,6 @@ class Order(BaseModel):
 
 ```python
 # src/domains/orders/repository.py
-from __future__ import annotations
 from typing import TYPE_CHECKING
 from .models import Order
 
@@ -147,7 +147,6 @@ class OrderRepository:
 
 ```python
 # src/domains/orders/service.py
-from __future__ import annotations
 from service import Service
 from .models import Order
 from .repository import OrderRepository
@@ -162,9 +161,9 @@ class OrderService(Service):
 
 ```python
 # src/domains/orders/domain.py
-from __future__ import annotations
 from typing import TYPE_CHECKING
 from fastapi import APIRouter, Request
+from state import get_domain
 from store.memory import InMemoryStore
 from .models import Order
 from .repository import OrderRepository
@@ -183,7 +182,7 @@ _router = APIRouter(prefix="/orders", tags=["orders"])
 
 @_router.get("/{order_id}")
 async def get_order(order_id: str, request: Request) -> dict:
-    domain: OrdersDomain = request.app.state.domains["domains.orders.domain"]
+    domain = get_domain(request, OrdersDomain)  # typed: OrdersDomain
     result = await domain.service.get(order_id)
     return result.model_dump() if result else {}
 
@@ -209,8 +208,9 @@ app = create_app(settings=settings, domains=[orders_domain])
 ```
 
 The framework calls `make_router()` at startup to build the OpenAPI schema and
-`bootstrap(settings)` during lifespan to initialise connections. The domain
-instance is then accessible at `request.app.state.domains["domains.orders.domain"]`.
+`bootstrap(settings)` during lifespan to initialise connections. Resolve the domain
+instance by type with `state.get_domain(request, OrdersDomain)` — no string keys, no `cast()`
+(in real domains, do this in `dependencies.py` and inject the service via `Annotated[..., Depends]`).
 
 ## Key extension points
 

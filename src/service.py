@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-
 class Service:
     """
     Base class for domain services.

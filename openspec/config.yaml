@@ -8,7 +8,7 @@ context: |
   minimal, and clearly demonstrating the idioms others will copy.
 
   ## Tech stack
-  - Python 3.15+ with `from __future__ import annotations` in every file
+  - Python 3.15+ (annotations are lazily evaluated — no `from __future__ import annotations`)
   - FastAPI + Starlette (ASGI); Uvicorn (uvloop + httptools) in production
   - Pydantic v2 + pydantic-settings[dotenv] for models and configuration
   - python-multipart for form/file upload support
@@ -70,7 +70,7 @@ context: |
   Quality gate: ruff format + check, mypy src/, pytest — all must pass before done.
 
   ## Conventions
-  - `from __future__ import annotations` in every .py file
+  - No `from __future__ import annotations` (redundant on Python 3.14+)
   - TYPE_CHECKING guard for type-only imports
   - Secrets must be SecretStr in Settings, never plain str
   - No hardcoded values; everything configurable via env vars / .env

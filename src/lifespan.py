@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
@@ -42,7 +40,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # --- Bootstrap domain modules ---
     # Each module may expose `async bootstrap(settings, **kwargs) -> Any`.
-    # The returned instance is stored on app.state.domains[module.__name__].
+    # The returned instance is stored on app.state.domains[module.__name__]
+    # and indexed by type in app.state.domains_by_type (see state.get_domain).
     # Framework-level singletons (audit_backend, audit_integrity) are forwarded
     # as kwargs so domain bootstrap functions can opt-in to them without
     # reaching back into app.state directly.
@@ -55,6 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             try:
                 instance = await module.bootstrap(settings, **bootstrap_kwargs)
                 app.state.domains[module.__name__] = instance
+                app.state.domains_by_type[type(instance)] = instance
                 logger.info("domain bootstrapped", domain=module.__name__)
             except Exception as exc:
                 logger.error("domain bootstrap failed", domain=module.__name__, error=str(exc))

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Protocol, TypeVar, runtime_checkable
 
 K = TypeVar("K")

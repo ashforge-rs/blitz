@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from fastapi import FastAPI
 from limits.aio.storage import Storage
 from starlette.middleware.cors import CORSMiddleware

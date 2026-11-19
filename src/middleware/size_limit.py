@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 

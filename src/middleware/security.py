@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 

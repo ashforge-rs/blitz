@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Annotated, Any, cast
 
 from fastapi import Depends, HTTPException, Request

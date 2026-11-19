@@ -6,8 +6,6 @@ hold regardless of the data — effectively finding edge cases no hand-written
 test would think to cover.
 """
 
-from __future__ import annotations
-
 import asyncio
 from typing import Any, cast
 from unittest.mock import MagicMock

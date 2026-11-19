@@ -154,8 +154,6 @@ If `{python_version}` differs from the current `PYTHON_PRIMARY`:
 Create `src/auth/provider.py` with the following content:
 
 ```python
-from __future__ import annotations
-
 from starlette.requests import Request
 
 from context import RequestContext

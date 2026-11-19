@@ -1,7 +1,5 @@
 """Unit tests for example.repository.ItemRepository."""
 
-from __future__ import annotations
-
 from typing import Any
 
 import pytest

@@ -1,7 +1,5 @@
 """Integration tests for the /example HTTP routes."""
 
-from __future__ import annotations
-
 from httpx import AsyncClient
 
 # ---------------------------------------------------------------------------

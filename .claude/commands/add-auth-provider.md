@@ -22,7 +22,7 @@ class MyAuthProvider:
 - `authorize` receives the already-verified principal; use it to check scopes/roles
 - Store the provider on the app via `create_app(auth_provider=MyAuthProvider())`
 - If the scheme requires config (secret keys, JWKS URL, etc.) read values from `Settings` — add new fields to `src/config.py` if needed, and document them in `.env.example`
-- Use `from __future__ import annotations` at the top
+- No `from __future__ import annotations` — Python 3.14+ evaluates annotations lazily (PEP 649)
 
 ### After implementation
 1. Show an example of protecting a route with `Depends(get_auth_context)` from `auth.dependency`

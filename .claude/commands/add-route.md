@@ -10,7 +10,6 @@ Arguments: $ARGUMENTS
    - Use `request.state.ctx` to access `RequestContext`
    - Import `get_auth_context` from `auth.dependency` and protect endpoints that need auth using `Depends(get_auth_context)`  # noqa: B008
    - Return typed Pydantic response models (define them at the top of the file)
-   - Use `from __future__ import annotations` at the top
 
 2. Register the router in `src/app.py`:
    - Import the new module in the routes section
@@ -23,6 +22,6 @@ Arguments: $ARGUMENTS
 ## Conventions
 
 - Line length: 100
-- `from __future__ import annotations` on every new file
+- No `from __future__ import annotations` — Python 3.14+ evaluates annotations lazily (PEP 649)
 - Fully type-annotated — `mypy` runs in strict mode and must stay clean
 - No bare `except:` — always catch a specific exception type

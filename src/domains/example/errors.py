@@ -6,8 +6,6 @@ HTTP status code or retry strategy.  Never inspect the ``message`` string for
 control flow — it is a human-readable description only.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import StrEnum
 

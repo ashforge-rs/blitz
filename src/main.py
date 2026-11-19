@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 # ---------------------------------------------------------------------------
 # Root entry point — delegates to src/services/api/main.py.
 #

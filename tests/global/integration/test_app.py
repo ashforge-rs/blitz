@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from asgi_lifespan import LifespanManager
 from fastapi import Depends, Request
 from httpx import ASGITransport, AsyncClient

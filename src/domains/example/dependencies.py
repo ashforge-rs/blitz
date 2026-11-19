@@ -1,30 +1,44 @@
-from __future__ import annotations
-
-from typing import Annotated, cast
+from typing import Annotated
 
 from fastapi import Depends, Request
 
 from audit.backend import AuditBackend, AuditIntegrity
 from context import RequestContext
+from state import get_domain
 
 from .service import ItemService
 
 
 def _get_item_service(request: Request) -> ItemService:
-    domain = request.app.state.domains["domains.example.domain"]
-    return cast("ItemService", domain.service)
+    # Imported lazily: domain.py imports this module, so a top-level import
+    # would be circular.
+    from .domain import ItemsDomain
+
+    return get_domain(request, ItemsDomain).service
 
 
 def _get_ctx(request: Request) -> RequestContext:
-    return cast("RequestContext", request.state.ctx)
+    ctx = request.state.ctx
+    if not isinstance(ctx, RequestContext):
+        msg = "request.state.ctx is missing — is RequestContextMiddleware installed?"
+        raise TypeError(msg)
+    return ctx
 
 
 def _get_audit_backend(request: Request) -> AuditBackend:
-    return cast("AuditBackend", request.app.state.audit_backend)
+    backend = request.app.state.audit_backend
+    if not isinstance(backend, AuditBackend):
+        msg = f"app.state.audit_backend is {type(backend).__name__}, expected AuditBackend"
+        raise TypeError(msg)
+    return backend
 
 
 def _get_audit_integrity(request: Request) -> AuditIntegrity:
-    return cast("AuditIntegrity", request.app.state.audit_integrity)
+    integrity = request.app.state.audit_integrity
+    if not isinstance(integrity, AuditIntegrity):
+        msg = f"app.state.audit_integrity is {type(integrity).__name__}, expected AuditIntegrity"
+        raise TypeError(msg)
+    return integrity
 
 
 ItemServiceDep = Annotated[ItemService, Depends(_get_item_service)]

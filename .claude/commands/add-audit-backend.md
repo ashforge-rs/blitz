@@ -32,7 +32,7 @@ class MyAuditBackend(AuditBackend):
 - If the backend requires external I/O (DB, HTTP, queue) it should be initialised in `__init__` or a separate `connect()` coroutine and closed gracefully
 - If a connection is needed, hook into lifespan by documenting that the consumer should call `await backend.connect()` during startup and `await backend.close()` during shutdown
 - Export the new class from `src/audit/backends/__init__.py`
-- Use `from __future__ import annotations` at the top
+- No `from __future__ import annotations` — Python 3.14+ evaluates annotations lazily (PEP 649)
 
 ### After implementation
 1. Update `src/audit/backends/__init__.py` to export the new class

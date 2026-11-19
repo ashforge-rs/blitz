@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import types
 from collections.abc import Callable, Coroutine
 from typing import Any
@@ -71,7 +69,8 @@ def create_app(
         - ``async bootstrap(settings: Settings, **kwargs) -> Any`` — called
           during lifespan startup; initialise DB pools, clients, etc. and return
           the domain instance.  The instance is stored on
-          ``app.state.domains[module.__name__]`` for use in route handlers.
+          ``app.state.domains[module.__name__]``; resolve it in dependencies
+          with :func:`state.get_domain` (typed lookup by domain class).
     extra_context:
         Arbitrary key-value pairs stored on ``app.state`` for use across the
         application (e.g. database pools, feature flag clients).
@@ -132,6 +131,7 @@ def create_app(
     app.state.metrics_require_auth = settings.METRICS_REQUIRE_AUTH
     app.state.in_flight = 0
     app.state.domains = {}
+    app.state.domains_by_type = {}
     app.state._domain_modules = domains or []
 
     if extra_context:

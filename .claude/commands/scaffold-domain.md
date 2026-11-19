@@ -25,8 +25,6 @@ src/domains/<name>/
 ### 2. `src/domains/<name>/models.py`
 
 ```python
-from __future__ import annotations
-
 from pydantic import BaseModel
 
 
@@ -47,8 +45,6 @@ class Update<Name>ItemRequest(BaseModel):
 ### 3. `src/domains/<name>/repository.py`
 
 ```python
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from .models import <Name>Item
@@ -80,8 +76,6 @@ class <Name>Repository:
 ### 4. `src/domains/<name>/service.py`
 
 ```python
-from __future__ import annotations
-
 import uuid
 from typing import TYPE_CHECKING
 
@@ -113,24 +107,29 @@ class <Name>Service(Service):
 ### 5. `src/domains/<name>/dependencies.py`
 
 ```python
-from __future__ import annotations
-
 from typing import Annotated
 
 from fastapi import Depends, Request
 
 from context import RequestContext
+from state import get_domain
 
 from .service import <Name>Service
 
 
 def _get_<name>_service(request: Request) -> <Name>Service:
-    domain = request.app.state.domains["domains.<name>.domain"]
-    return domain.service
+    # Lazy import: domain.py imports this module.
+    from .domain import <Name>Domain
+
+    return get_domain(request, <Name>Domain).service
 
 
 def _get_ctx(request: Request) -> RequestContext:
-    return request.state.ctx
+    ctx = request.state.ctx
+    if not isinstance(ctx, RequestContext):
+        msg = "request.state.ctx is missing — is RequestContextMiddleware installed?"
+        raise TypeError(msg)
+    return ctx
 
 
 <Name>ServiceDep = Annotated[<Name>Service, Depends(_get_<name>_service)]
@@ -140,8 +139,6 @@ RequestContextDep = Annotated[RequestContext, Depends(_get_ctx)]
 ### 6. `src/domains/<name>/domain.py`
 
 ```python
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, status
@@ -244,7 +241,7 @@ any request and `app.state.domains` is populated.
 
 ## Conventions
 
-- `from __future__ import annotations` on every new file
+- No `from __future__ import annotations` — Python 3.14+ evaluates annotations lazily (PEP 649)
 - Line length: 100 characters
 - Ruff only — no bare `except:`, always name the exception type
 - All domain imports inside the package must be relative (`from .models import ...`)
