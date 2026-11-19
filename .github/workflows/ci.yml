@@ -30,11 +30,11 @@ name: CI
 # ── Global environment variables ─────────────────────────────────────────────
 # PYTHON_PRIMARY  — used for lint, type-check, coverage upload, and Docker builds.
 # PYTHON_LATEST   — added to the test matrix for forward-compat checks.
-# To drop 3.13 testing, remove it from the matrix in the `test` job below
+# When a newer Python ships, add it to the matrix in the `test` job below
 # (env vars cannot be referenced inside matrix: values, so they're literals there).
 env:
-  PYTHON_PRIMARY: "3.12"
-  PYTHON_LATEST: "3.13"
+  PYTHON_PRIMARY: "3.15"
+  PYTHON_LATEST: "3.15"
 
 # ── Concurrency: cancel in-flight runs for the same branch/PR ────────────────
 # This keeps queue depth low and avoids wasting runner minutes on stale commits.
@@ -95,7 +95,7 @@ jobs:
       # matrix values cannot reference env context — kept as literals.
       # Update these alongside PYTHON_PRIMARY / PYTHON_LATEST in the env block above.
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.15"]
 
     steps:
       - uses: actions/checkout@v7

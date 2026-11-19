@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "blitz"
 version = "0.1.1"
 description = "FastAPI boilerplate"
-requires-python = ">=3.11"
+requires-python = ">=3.15"
 dependencies = [
   "fastapi>=0.165.0",
   "uvicorn[standard]>=0.54.0",
@@ -61,7 +61,7 @@ packages = [
 [tool.ruff]
 src = ["src"]
 line-length = 100
-target-version = "py312"
+target-version = "py315"
 
 [tool.ruff.lint]
 select = [
@@ -150,7 +150,7 @@ exclude_lines = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.15"
 mypy_path = "src"
 # Resolve all packages from mypy_path (src/) rather than site-packages.
 # Without this, mypy finds the installed blitz wheel in .venv and complains

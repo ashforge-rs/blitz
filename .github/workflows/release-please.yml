@@ -27,7 +27,7 @@ name: Release Please
 
 # Must stay in sync with PYTHON_PRIMARY in ci.yml.
 env:
-    PYTHON_PRIMARY: "3.12"
+    PYTHON_PRIMARY: "3.15"
 
 # release-please needs write access to open PRs and create releases.
 # docker-release/publish inherit these permissions via `secrets: inherit`.

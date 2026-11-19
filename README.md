@@ -3,7 +3,7 @@
 FastAPI boilerplate
 
 [![CI](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://www.python.org)
+[![Python](https://img.shields.io/badge/python-3.15-blue)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ---
@@ -182,7 +182,7 @@ GitHub Actions runs on every push and pull request:
 - Ruff format check and lint
 - mypy type-check
 - pytest with coverage enforcement (>= 80 %)
-- Matrix: Python 3.12 and 3.13
+- Matrix: Python 3.15
 
 Releases are automated via [release-please](https://github.com/googleapis/release-please). Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/) — the PR title check enforces this automatically.
 

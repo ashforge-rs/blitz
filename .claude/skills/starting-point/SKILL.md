@@ -41,7 +41,7 @@ tool with the questions array below.
 
 **4. python_version**
 > Minimum Python version to support.
-> Options: `3.11`, `3.12`, `3.13`. Default: `3.12`.
+> Options: `3.13`, `3.14`, `3.15`. Default: `3.15`.
 
 **5. environment**
 > Target deployment environment for your `.env`.
@@ -98,7 +98,7 @@ state.
 - `description` → `{project_description}`
 - `requires-python` → `>={python_version}`
 - `[tool.ruff] target-version` → `py{python_version_nodot}`
-  (e.g. `3.12` → `py312`)
+  (e.g. `3.15` → `py315`)
 - `[tool.mypy] python_version` → `"{python_version}"`
 
 ### 3b — .env
@@ -145,7 +145,7 @@ Replace every occurrence of the placeholder owner (`@ashforge-rs`) with
 
 If `{python_version}` differs from the current `PYTHON_PRIMARY`:
 - Update `PYTHON_PRIMARY` in both workflow `env:` blocks.
-- Update the matrix literal `["3.12", "3.13"]` — use `["{python_version}", ...]`
+- Update the matrix literal `["3.15"]` — use `["{python_version}", ...]`
   keeping the latest stable version as the second entry.
 - Update the coverage upload `if:` guard to the new primary version.
 

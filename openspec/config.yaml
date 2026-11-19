@@ -8,12 +8,12 @@ context: |
   minimal, and clearly demonstrating the idioms others will copy.
 
   ## Tech stack
-  - Python 3.11+ with `from __future__ import annotations` in every file
+  - Python 3.15+ with `from __future__ import annotations` in every file
   - FastAPI + Starlette (ASGI); Uvicorn (uvloop + httptools) in production
   - Pydantic v2 + pydantic-settings[dotenv] for models and configuration
   - python-multipart for form/file upload support
   - uv — the ONLY package/venv manager (never pip, never poetry)
-  - Ruff — lint + format (line-length 100, target py311)
+  - Ruff — lint + format (line-length 100, target py315)
   - mypy — strict-ish: disallow_untyped_defs, check_untyped_defs, no_implicit_optional
   - pytest + pytest-asyncio (asyncio_mode=auto) + Hypothesis for fuzz tests
   - asgi-lifespan + httpx for integration tests
