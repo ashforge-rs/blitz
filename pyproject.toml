@@ -38,7 +38,10 @@ dev = [
 
 [tool.uv]
 # Keep every developer and CI on the same uv minor (lockfile format, resolver).
-# CI and the Dockerfiles pin the exact version; bump all three together.
+# Single source of truth for CI: setup-uv reads this and installs the newest
+# matching release. The Dockerfiles and the uv-lock pre-commit hook pin exact
+# versions, and Dependabot bumps those (docker / pre-commit ecosystems).
+# For a uv minor upgrade, change this line.
 required-version = "~=0.13.7"
 
 [tool.hatch.build.targets.wheel]

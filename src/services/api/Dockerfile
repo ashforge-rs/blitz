@@ -4,7 +4,7 @@
 # ────────────────────────────────────────────────
 FROM python:3.15-slim AS builder
 
-# Pinned uv (keep in sync with [tool.uv] required-version and CI).
+# Pinned uv (must satisfy [tool.uv] required-version; Dependabot bumps it).
 COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /uvx /usr/local/bin/
 
 # UV_COMPILE_BYTECODE — precompile .pyc at build time for faster cold starts.
