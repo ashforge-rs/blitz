@@ -1,7 +1,8 @@
 from contextvars import ContextVar
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-lazy from starlette.requests import Request
+if TYPE_CHECKING:
+    from starlette.requests import Request
 
 
 class RequestContext:

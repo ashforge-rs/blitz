@@ -1,6 +1,5 @@
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
-lazy import types
 
 from fastapi import FastAPI
 from limits.aio.storage import MemoryStorage, Storage
@@ -13,10 +12,12 @@ from lifespan import lifespan
 from middleware.stack import register_middleware
 from routes import health, metrics
 from telemetry.setup import telemetry_config
-lazy from auth.protocol import AuthProvider
 
 if TYPE_CHECKING:
+    import types
+
     from audit.backend import AuditBackend, AuditIntegrity
+    from auth.protocol import AuthProvider
 
 HealthCheckFn = Callable[[], Coroutine[Any, Any, dict[str, Any]]]
 

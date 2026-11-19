@@ -1,8 +1,9 @@
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-lazy from starlette.requests import Request
+if TYPE_CHECKING:
+    from starlette.requests import Request
 
-lazy from context import RequestContext
+    from context import RequestContext
 
 
 @runtime_checkable
