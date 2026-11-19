@@ -1,3 +1,6 @@
+# Only pyproject.toml, uv.lock and src/ are COPY'd into the image; excluding
+# everything else keeps the build context small and secrets out of it.
+
 # Python / uv
 __pycache__/
 *.pyc
@@ -14,10 +17,24 @@ build/
 .env.*
 !.env.example
 
+# VCS / repo tooling (not needed in the image)
+.git/
+.github/
+.claude/
+openspec/
+infra/
+grafana/
+scripts/
+tests/
+conftest.py
+docker-compose.yml
+*.md
+
 # Dev tooling
 .ruff_cache/
 .pytest_cache/
 .mypy_cache/
+.hypothesis/
 htmlcov/
 coverage.xml
 .coverage

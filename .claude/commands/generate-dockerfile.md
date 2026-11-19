@@ -32,14 +32,18 @@ FROM python:3.XX-slim AS builder
 ```
 
 - Pin to the exact Python minor version from `requires-python`
-- Copy uv binary from the official image:
+- Copy the uv binary from the official image, **pinned** to the version in `[tool.uv] required-version`
+  (never `:latest`):
   ```
-  COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+  COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /uvx /usr/local/bin/
   ```
+- Set `ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0`
 - Set workdir to `/app`
 - Copy `pyproject.toml` and `uv.lock` first (layer-cache friendly)
-- Run `uv sync --frozen --no-dev --no-install-project` to install deps only
-- Copy source code (`src/`) and run `uv sync --frozen --no-dev` to install the project itself
+- Run `uv sync --frozen --no-dev --no-install-project` to install deps only, with
+  `RUN --mount=type=cache,target=/root/.cache/uv`
+- Copy source code (`src/`) and run `uv sync --frozen --no-dev` (same cache mount), then
+  `python -m compileall -q src`
 - This keeps the virtualenv at `/app/.venv`
 
 **Stage 2 — `runtime`**
@@ -54,6 +58,8 @@ FROM python:3.XX-slim AS runtime
 - Copy the installed package: `COPY --from=builder /app/src /app/src`
 - Set `ENV PATH="/app/.venv/bin:$PATH"` and `PYTHONPATH="/app/src"`
 - Set `PYTHONDONTWRITEBYTECODE=1` and `PYTHONUNBUFFERED=1`
+- Set `UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN` (default `25`) — at or below the orchestrator's
+  termination grace period so in-flight requests drain on SIGTERM
 - Switch to non-root user: `USER appuser`
 - Expose port 8000 (or the configured port)
 - Add a `HEALTHCHECK` using `/live` endpoint
@@ -85,13 +91,22 @@ __pycache__/
 *.pyo
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.hypothesis/
 dist/
 build/
 *.egg-info/
 .env
 .env.*
 !.env.example
+.github/
+.claude/
+openspec/
+infra/
+grafana/
+scripts/
 tests/
+*.md
 ```
 
 ### Output

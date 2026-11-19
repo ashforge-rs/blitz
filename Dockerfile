@@ -1,40 +1,58 @@
 # syntax=docker/dockerfile:1
+# Root Dockerfile — mirrors src/services/api/Dockerfile (the per-service image
+# CI builds). Keep the two in sync.
 # ────────────────────────────────────────────────
 # Stage 1: builder — install dependencies via uv
 # ────────────────────────────────────────────────
 FROM python:3.15-slim AS builder
 
-# Copy the uv binary from the official image
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+# Pinned uv (keep in sync with [tool.uv] required-version and CI).
+COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /uvx /usr/local/bin/
+
+# UV_COMPILE_BYTECODE — precompile .pyc at build time for faster cold starts.
+# UV_LINK_MODE=copy   — required with the cache mount (different filesystem).
+# UV_PYTHON_DOWNLOADS — always use the image's interpreter, never download one.
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=0
 
 WORKDIR /app
 
-# Layer-cache: install deps before copying source
+# Layer-cache: install deps before copying source so this layer only
+# invalidates when pyproject.toml / uv.lock change. The cache mount keeps
+# downloaded wheels across builds without baking them into the image.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
 
-# Now install the project itself
 COPY src/ ./src/
-RUN uv sync --frozen --no-dev
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev \
+ && python -m compileall -q src
 
 # ────────────────────────────────────────────────
 # Stage 2: runtime — minimal production image
 # ────────────────────────────────────────────────
 FROM python:3.15-slim AS runtime
 
-# Non-root user for least-privilege execution
+LABEL org.opencontainers.image.title="blitz-api" \
+      org.opencontainers.image.description="blitz FastAPI service"
+
 RUN useradd --system --no-create-home --uid 1001 appuser
 
-# Bring in the pre-built virtualenv and source
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src   /app/src
 
+# UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN — on SIGTERM uvicorn stops accepting new
+# connections and waits this long for in-flight requests. Keep it at or below
+# your orchestrator's termination grace period (Kubernetes default: 30s).
+# Workers: set WEB_CONCURRENCY (read natively by uvicorn); default is 1.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app/src" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    # Sane default — override via env var or docker run -e
-    ENVIRONMENT=production
+    ENVIRONMENT=production \
+    UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=25
 
 WORKDIR /app
 
