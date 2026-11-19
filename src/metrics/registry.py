@@ -3,14 +3,6 @@ from typing import Any
 from prometheus_client import REGISTRY, Counter, Histogram
 
 
-def _get_or_create(collector_type: type, name: str, documentation: str, **kwargs: Any) -> Any:
-    """Return an existing collector or create and register a new one."""
-    existing = REGISTRY._names_to_collectors.get(name)
-    if existing is not None:
-        return existing
-    return collector_type(name, documentation, **kwargs)
-
-
 def counter(
     name: str,
     documentation: str,

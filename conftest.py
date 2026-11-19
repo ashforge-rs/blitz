@@ -63,7 +63,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             try:
                 analysis = cov._analyze(fr)
                 analysis_results.append((fr, analysis))
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 — skip files coverage cannot analyse
                 continue
 
         # Sort by coverage % ascending (worst first)
@@ -86,9 +86,9 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             else:
                 pct_style = "bold red"
 
-            # Shorten path: strip src/ prefix for readability
+            # Shorten path: strip the src/ prefix (absolute or relative) for readability
             display = fr
-            for prefix in ("src/", "/home/phoenix/blitz/src/"):
+            for prefix in (f"{Path.cwd() / 'src'}/", "src/"):
                 if display.startswith(prefix):
                     display = display[len(prefix) :]
                     break
@@ -118,5 +118,5 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
         console.print(table)
         console.print()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — display is best-effort
         console.print(f"[dim]Coverage display error: {exc}[/dim]")

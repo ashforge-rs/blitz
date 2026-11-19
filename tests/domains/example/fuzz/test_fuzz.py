@@ -10,6 +10,7 @@ import asyncio
 from typing import Any, cast
 from unittest.mock import MagicMock
 
+import pydantic
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -80,7 +81,7 @@ def test_create_request_accepts_valid_inputs(name: str, data: dict) -> None:
 @given(name=st.text(min_size=256))
 def test_create_request_rejects_name_too_long(name: str) -> None:
     """Names over 255 characters must be rejected by Pydantic."""
-    with pytest.raises(Exception):  # noqa: B017  # ValidationError subclasses Exception; exact type is internal to Pydantic v2
+    with pytest.raises(pydantic.ValidationError):
         CreateItemRequest(name=name)
 
 
@@ -128,7 +129,8 @@ def test_delete_removes_item(name: str) -> None:
     assert is_successful(_run(svc.delete(item.id, ctx)))
     get_result = _run(svc.get(item.id, ctx))
     assert not is_successful(get_result)
-    assert isinstance(get_result, Failure) and get_result.failure().code == ItemErrorCode.NOT_FOUND
+    assert isinstance(get_result, Failure)
+    assert get_result.failure().code == ItemErrorCode.NOT_FOUND
 
 
 @given(names=st.lists(valid_name, min_size=1, max_size=20, unique=True))
@@ -152,7 +154,8 @@ def test_delete_nonexistent_returns_not_found(name: str, extra_id: object) -> No
     if other_id == item.id:
         return  # skip degenerate collision case
     result = _run(svc.delete(other_id, ctx))
-    assert isinstance(result, Failure) and result.failure().code == ItemErrorCode.NOT_FOUND
+    assert isinstance(result, Failure)
+    assert result.failure().code == ItemErrorCode.NOT_FOUND
 
 
 # ---------------------------------------------------------------------------

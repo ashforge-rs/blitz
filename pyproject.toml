@@ -36,6 +36,11 @@ dev = [
   "dirty-equals>=0.11",
 ]
 
+[tool.uv]
+# Keep every developer and CI on the same uv minor (lockfile format, resolver).
+# CI and the Dockerfiles pin the exact version; bump all three together.
+required-version = "~=0.13.7"
+
 [tool.hatch.build.targets.wheel]
 sources = { "src" = "" }
 packages = [
@@ -81,6 +86,14 @@ select = [
   "TRY",  # flake8-tryceratops — discourage bare except, long try blocks
   "EM",   # flake8-errmsg — no string literals directly in raise
   "PERF", # perflint — avoid O(n) anti-patterns
+  "ASYNC", # flake8-async — blocking calls / misuse inside async code
+  "S",     # flake8-bandit — security lint (replaces a separate bandit step)
+  "BLE",   # flake8-blind-except — `except Exception` needs a justification
+  "PT",    # flake8-pytest-style
+  "DTZ",   # flake8-datetimez — no naive datetimes
+  "LOG",   # flake8-logging
+  "G",     # flake8-logging-format — no eager f-strings in log calls
+  "TID",   # flake8-tidy-imports — banned APIs (see below)
 ]
 ignore = [
   "ANN401", # Any is allowed where explicitly needed
@@ -89,27 +102,19 @@ ignore = [
   "EM102",  # allow f-string in raise
 ]
 
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"__future__.annotations".msg = "Redundant on Python 3.14+ — annotations are evaluated lazily (PEP 649)."
+
 [tool.ruff.lint.per-file-ignores]
-# Tests: no annotation requirements, allow commented examples, allow broad raises
-"tests/**" = ["ANN", "ERA", "TRY", "EM", "PTH", "TCH"]
-# Framework/infra files: These predate the strict rule set.
-# Remove entries here as each file is brought up to standard.
-"src/app.py" = ["ANN", "TCH", "ERA"]
-"src/config.py" = ["ANN"]
-"src/context.py" = ["ANN", "TCH"]
-"src/lifespan.py" = ["ANN"]
-"src/service.py" = ["ANN"]
-"src/main.py" = ["ANN", "ERA"]
-"src/audit/**" = ["ANN", "TCH"]
-"src/auth/**" = ["ANN", "TCH"]
-"src/errors/**" = ["ANN", "TCH"]
-"src/log/**" = ["ANN"]
-"src/metrics/**" = ["ANN"]
-"src/middleware/**" = ["ANN", "TCH"]
-"src/routes/**" = ["ANN", "TCH"]
-"src/store/**" = ["ANN", "TCH"]
-"src/telemetry/**" = ["ANN", "TCH"]
-"src/services/**" = ["ANN", "ERA"]
+# Tests: no annotation requirements, allow commented examples, allow broad raises, allow assert
+"tests/**" = ["ANN", "ERA", "TRY", "EM", "PTH", "TCH", "S101"]
+# FastAPI resolves route/dependency/handler annotations at runtime, so their
+# imports must stay real imports (not TYPE_CHECKING-only).
+"src/routes/**" = ["TC"]
+"src/errors/handlers.py" = ["TC"]
+"src/auth/dependency.py" = ["TC"]
+# Commented-out registration examples are intentional documentation.
+"src/services/*/main.py" = ["ERA001"]
 
 [tool.ruff.lint.isort]
 known-first-party = [
@@ -134,13 +139,21 @@ known-first-party = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-q --no-header"
+# --strict-markers / --strict-config: typos in marks or config keys are errors.
+addopts = "-q --no-header --strict-markers --strict-config"
+xfail_strict = true # an xfail test that unexpectedly passes fails the run
+# Turn every warning into an error so deprecations surface before they break.
+# Add narrowly-scoped "ignore:..." entries below for third-party noise.
+filterwarnings = ["error"]
 
 [tool.coverage.run]
 source = ["src"]
-omit = ["src/main.py"]
+# Process entry points (uvicorn bootstrap) — exercised by `make dev`, not tests.
+omit = ["src/main.py", "src/services/*/main.py"]
+branch = true
 
 [tool.coverage.report]
 show_missing = true

@@ -31,7 +31,9 @@ def make_db_check(db) -> Callable:
     async def check() -> dict:
         ok = await db.ping()
         return {"name": "database", "healthy": ok}
+
     return check
+
 
 # then in app setup:
 create_app(health_checks=[make_db_check(db_pool)])

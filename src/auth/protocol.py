@@ -1,8 +1,8 @@
 from typing import Any, Protocol, runtime_checkable
 
-from starlette.requests import Request
+lazy from starlette.requests import Request
 
-from context import RequestContext
+lazy from context import RequestContext
 
 
 @runtime_checkable

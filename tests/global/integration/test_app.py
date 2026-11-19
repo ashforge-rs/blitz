@@ -244,7 +244,8 @@ async def test_audit_event_dispatched(test_settings):
     assert ev.method == "GET"
     assert ev.path == "/live"
     assert ev.status_code == 200
-    assert ev.duration_ms is not None and ev.duration_ms > 0
+    assert ev.duration_ms is not None
+    assert ev.duration_ms > 0
     assert ev.request_id != ""
 
 

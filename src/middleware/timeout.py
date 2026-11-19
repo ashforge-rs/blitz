@@ -1,7 +1,10 @@
 import asyncio
+from typing import TYPE_CHECKING
 
 from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 
 class TimeoutMiddleware:

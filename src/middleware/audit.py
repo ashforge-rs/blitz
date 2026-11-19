@@ -1,9 +1,11 @@
 import time
-
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from typing import TYPE_CHECKING
 
 from audit.backend import AuditEvent, AuditEventType, AuditResult, AuditSeverity
 from middleware.rate_limit import _resolve_ip, parse_networks
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 
 class AuditMiddleware:
@@ -43,11 +45,8 @@ class AuditMiddleware:
         finally:
             duration_ms = (time.perf_counter() - start) * 1000
             app_obj = scope.get("app")
-            audit_backend = (
-                getattr(app_obj.state, "audit_backend", None) if app_obj is not None else None
-            )
-            if audit_backend is not None:
-                assert app_obj is not None
+            audit_backend = getattr(getattr(app_obj, "state", None), "audit_backend", None)
+            if app_obj is not None and audit_backend is not None:
                 app_settings = getattr(app_obj.state, "settings", None)
                 trusted = parse_networks(
                     tuple(app_settings.TRUSTED_PROXIES if app_settings else ())

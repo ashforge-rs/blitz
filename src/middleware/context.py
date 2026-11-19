@@ -1,10 +1,13 @@
 import re
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from starlette.datastructures import MutableHeaders
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from context import RequestContext, _ctx_var
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 # Accept client-supplied request IDs only if they are short and made of safe
 # characters (UUIDs, ULIDs, trace IDs).  Anything else — oversized values,

@@ -3,6 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from loguru import logger
 from pydantic import BaseModel
 from starlette.requests import Request
 
@@ -71,7 +72,10 @@ async def readiness(request: Request) -> JSONResponse:
             results[name] = result
             if not result.get("healthy", True):
                 failed = True
-        except Exception:
+        except Exception:  # noqa: BLE001 — any failure in a check marks it unhealthy
+            logger.opt(exception=True).warning(
+                "health check raised", check=getattr(check, "__name__", "unknown")
+            )
             results[getattr(check, "__name__", "unknown")] = {
                 "healthy": False,
                 "error": "Health check failed",

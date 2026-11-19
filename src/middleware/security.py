@@ -1,5 +1,9 @@
+from typing import TYPE_CHECKING
+
 from starlette.datastructures import MutableHeaders
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 # Headers sent on every response regardless of environment.
 # X-XSS-Protection is intentionally omitted: it was deprecated in 2019 and

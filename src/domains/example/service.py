@@ -117,7 +117,7 @@ class ItemService(Service):
         ) as span:
             try:
                 item = await self._repo.find_by_id(item_id)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
                 span.record_exception(exc)
                 span.set_status(trace.StatusCode.ERROR, str(exc))
                 logger.error("item.get.error", item_id=item_id, error=str(exc))
@@ -141,7 +141,7 @@ class ItemService(Service):
         ) as span:
             try:
                 items = await self._repo.find_all()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
                 span.record_exception(exc)
                 span.set_status(trace.StatusCode.ERROR, str(exc))
                 logger.error("item.list_all.error", error=str(exc))
@@ -171,7 +171,7 @@ class ItemService(Service):
             )
             try:
                 saved = await self._repo.save(item)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
                 span.record_exception(exc)
                 span.set_status(trace.StatusCode.ERROR, str(exc))
                 logger.error(
@@ -215,7 +215,7 @@ class ItemService(Service):
         ) as span:
             try:
                 item = await self._repo.find_by_id(item_id)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
                 span.record_exception(exc)
                 span.set_status(trace.StatusCode.ERROR, str(exc))
                 logger.error("item.update.error", item_id=item_id, error=str(exc))
@@ -250,7 +250,7 @@ class ItemService(Service):
             )
             try:
                 saved = await self._repo.save(updated)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
                 span.record_exception(exc)
                 span.set_status(trace.StatusCode.ERROR, str(exc))
                 logger.error("item.update.save_error", item_id=item_id, error=str(exc))
@@ -286,7 +286,7 @@ class ItemService(Service):
         ) as span:
             try:
                 deleted = await self._repo.delete(item_id)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
                 span.record_exception(exc)
                 span.set_status(trace.StatusCode.ERROR, str(exc))
                 logger.error("item.delete.error", item_id=item_id, error=str(exc))

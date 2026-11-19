@@ -1,16 +1,20 @@
-from fastapi import FastAPI
-from limits.aio.storage import Storage
+from typing import TYPE_CHECKING
+
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.types import ASGIApp, Receive, Scope, Send
+lazy from fastapi import FastAPI
+lazy from limits.aio.storage import Storage
 
-from config import Settings
 from middleware.audit import AuditMiddleware
 from middleware.context import RequestContextMiddleware
 from middleware.rate_limit import RateLimitMiddleware
 from middleware.security import SecurityHeadersMiddleware
 from middleware.size_limit import RequestSizeLimitMiddleware
 from middleware.timeout import TimeoutMiddleware
+lazy from config import Settings
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 class _InFlightMiddleware:

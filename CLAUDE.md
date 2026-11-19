@@ -120,6 +120,7 @@ src/domains/orders/
 # src/domains/orders/models.py
 from pydantic import BaseModel
 
+
 class Order(BaseModel):
     id: str
     description: str
@@ -132,6 +133,7 @@ from .models import Order
 
 if TYPE_CHECKING:
     from store.protocol import KeyValueStore
+
 
 class OrderRepository:
     def __init__(self, store: KeyValueStore[str, Order]) -> None:
@@ -150,6 +152,7 @@ class OrderRepository:
 from service import Service
 from .models import Order
 from .repository import OrderRepository
+
 
 class OrderService(Service):
     def __init__(self, repository: OrderRepository) -> None:
@@ -179,6 +182,7 @@ class OrdersDomain:
 
 
 _router = APIRouter(prefix="/orders", tags=["orders"])
+
 
 @_router.get("/{order_id}")
 async def get_order(order_id: str, request: Request) -> dict:
@@ -223,6 +227,7 @@ from auth.protocol import AuthProvider
 from context import RequestContext
 from starlette.requests import Request
 
+
 class MyAuthProvider:
     async def authenticate(self, request: Request) -> dict | None:
         token = request.headers.get("authorization", "").removeprefix("Bearer ")
@@ -230,6 +235,7 @@ class MyAuthProvider:
 
     async def authorize(self, request: Request, principal: dict, ctx: RequestContext) -> bool:
         return "read" in principal.get("scopes", [])
+
 
 app = create_app(auth_provider=MyAuthProvider())
 ```
@@ -239,6 +245,7 @@ Protect a route with `get_auth_context`:
 ```python
 from fastapi import Depends
 from auth.dependency import get_auth_context
+
 
 @router.get("/secret")
 async def secret(principal=Depends(get_auth_context)):
@@ -252,9 +259,11 @@ Implement `AuditBackend` and pass it to `create_app()`:
 ```python
 from audit.backend import AuditBackend, AuditEvent
 
+
 class DatabaseAuditBackend(AuditBackend):
     async def log(self, event: AuditEvent) -> None:
         await db.audit_logs.insert(event.__dict__)
+
 
 app = create_app(audit_backend=DatabaseAuditBackend())
 ```
@@ -267,6 +276,7 @@ Pass async callables returning `{"name": str, "healthy": bool, ...}`:
 async def check_database() -> dict:
     ok = await db.ping()
     return {"name": "database", "healthy": ok}
+
 
 app = create_app(health_checks=[check_database])
 ```
@@ -281,7 +291,7 @@ so network-backed storages never block the event loop.
 Default is `MemoryStorage` (single-process). Pass a different backend to share state across workers:
 
 ```python
-from limits.aio.storage import MemoryStorage   # built-in default
+from limits.aio.storage import MemoryStorage  # built-in default
 # from limits.aio.storage import RedisStorage  # uv add "limits[async-redis]"
 # RedisStorage("async+redis://localhost:6379")
 
@@ -315,10 +325,11 @@ Every request receives a `RequestContext` accessible via `request.state.ctx`:
 ```python
 from fastapi import Request
 
+
 @router.get("/")
 async def handler(request: Request):
     ctx = request.state.ctx
-    ctx.request_id     # X-Request-ID header or UUID4
+    ctx.request_id  # X-Request-ID header or UUID4
     ctx.set("key", value)
     ctx.get("key")
 ```

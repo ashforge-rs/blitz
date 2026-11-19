@@ -1,7 +1,7 @@
 from contextvars import ContextVar
 from typing import Any
 
-from starlette.requests import Request
+lazy from starlette.requests import Request
 
 
 class RequestContext:

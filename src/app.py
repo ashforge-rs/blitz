@@ -1,20 +1,22 @@
-import types
 from collections.abc import Callable, Coroutine
-from typing import Any
+from typing import TYPE_CHECKING, Any
+lazy import types
 
 from fastapi import FastAPI
 from limits.aio.storage import MemoryStorage, Storage
 
-from audit.backend import AuditBackend, AuditIntegrity
 from audit.backends.loguru import LoguruAuditBackend
 from audit.integrity import NoIntegrity
-from auth.protocol import AuthProvider
 from config import Settings, get_settings
 from errors.handlers import register_error_handlers
 from lifespan import lifespan
 from middleware.stack import register_middleware
 from routes import health, metrics
 from telemetry.setup import telemetry_config
+lazy from auth.protocol import AuthProvider
+
+if TYPE_CHECKING:
+    from audit.backend import AuditBackend, AuditIntegrity
 
 HealthCheckFn = Callable[[], Coroutine[Any, Any, dict[str, Any]]]
 
@@ -146,12 +148,9 @@ def create_app(
 
     # --- Prometheus auto-instrumentation ---
     if settings.METRICS_ENDPOINT_ENABLED:
-        try:
-            from prometheus_fastapi_instrumentator import Instrumentator
+        from prometheus_fastapi_instrumentator import Instrumentator
 
-            Instrumentator().instrument(app)
-        except Exception:
-            pass  # Already registered (e.g. multiple create_app() calls in tests)
+        Instrumentator().instrument(app)
 
     # --- Built-in routes ---
     app.include_router(health.router)

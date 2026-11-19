@@ -2,6 +2,7 @@ import ipaddress
 import math
 import time
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 from limits import RateLimitItem, parse
 from limits.aio.storage import MemoryStorage, Storage
@@ -9,7 +10,9 @@ from limits.aio.strategies import MovingWindowRateLimiter
 from loguru import logger
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Receive, Scope, Send
 
 type _Network = ipaddress.IPv4Network | ipaddress.IPv6Network
 
@@ -102,7 +105,7 @@ class RateLimitMiddleware:
         key = _resolve_ip(Request(scope), self._trusted)
         try:
             allowed = await self._limiter.hit(self._limit, key)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — fail-open on storage outage
             logger.warning("rate limiter storage error — allowing request", error=str(exc))
             allowed = True
 
@@ -121,6 +124,6 @@ class RateLimitMiddleware:
         """Seconds until the window frees a slot (``reset_time`` is an epoch timestamp)."""
         try:
             stats = await self._limiter.get_window_stats(self._limit, key)
-        except Exception:
+        except Exception:  # noqa: BLE001 — Retry-After is best-effort
             return str(self._limit.get_expiry())
         return str(max(1, math.ceil(stats.reset_time - time.time())))

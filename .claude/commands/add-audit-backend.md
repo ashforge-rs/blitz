@@ -9,9 +9,9 @@ Create `src/audit/backends/<slug>.py` with a class extending `AuditBackend`:
 ```python
 from audit.backend import AuditBackend, AuditEvent
 
+
 class MyAuditBackend(AuditBackend):
-    async def log(self, event: AuditEvent) -> None:
-        ...
+    async def log(self, event: AuditEvent) -> None: ...
 ```
 
 ### AuditEvent fields available
