@@ -4,9 +4,9 @@ from functools import wraps
 from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, Request, status
-from fastapi.responses import JSONResponse
 from returns.result import Failure, Result, Success
 
+from errors.problem import problem_response
 from store.memory import InMemoryStore
 
 from .dependencies import (  # noqa: TC001 — FastAPI resolves Annotated[..., Depends] at runtime via get_type_hints()
@@ -20,6 +20,7 @@ from .service import ItemService
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
 
     from audit.backend import AuditBackend, AuditIntegrity
     from config import Settings
@@ -49,19 +50,20 @@ async def _item_error_handler(request: Request, exc: ItemDomainError) -> JSONRes
     """Convert ItemDomainError to the appropriate HTTP JSON response."""
     match exc.error.code:
         case ItemErrorCode.NOT_FOUND:
-            return JSONResponse(
-                status_code=status.HTTP_404_NOT_FOUND,
-                content={"detail": exc.error.message},
+            return problem_response(
+                status.HTTP_404_NOT_FOUND, exc.error.message, request=request, code=exc.error.code
             )
         case ItemErrorCode.CONFLICT:
-            return JSONResponse(
-                status_code=status.HTTP_409_CONFLICT,
-                content={"detail": exc.error.message},
+            return problem_response(
+                status.HTTP_409_CONFLICT, exc.error.message, request=request, code=exc.error.code
             )
         case ItemErrorCode.STORAGE_ERROR:
-            return JSONResponse(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={"detail": "Storage error"},
+            # Never leak storage internals to the client.
+            return problem_response(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Storage error",
+                request=request,
+                code=exc.error.code,
             )
 
 

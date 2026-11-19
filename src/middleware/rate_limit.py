@@ -9,7 +9,8 @@ from limits.aio.storage import MemoryStorage, Storage
 from limits.aio.strategies import MovingWindowRateLimiter
 from loguru import logger
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+
+from errors.problem import problem_response
 
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Receive, Scope, Send
@@ -113,10 +114,8 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        response = JSONResponse(
-            {"detail": "Too many requests"},
-            status_code=429,
-            headers={"Retry-After": await self._retry_after(key)},
+        response = problem_response(
+            429, "Too many requests", headers={"Retry-After": await self._retry_after(key)}
         )
         await response(scope, receive, send)
 

@@ -5,34 +5,50 @@ from loguru import logger
 from starlette.exceptions import HTTPException
 
 from errors.exceptions import AppError
+from errors.problem import problem_response
 
 
 def register_error_handlers(app: FastAPI, *, is_production: bool = True) -> None:
     """
     Register global exception handlers on *app*.
 
-    - ``RequestValidationError`` → 422 with field-level detail.
-    - ``HTTPException`` → passthrough with original status code.
+    Every handler returns an RFC 9457 Problem Details body
+    (``application/problem+json``, see :mod:`errors.problem`):
+
+    - ``RequestValidationError`` → 422 with field-level ``errors``.
+    - ``AppError`` → its ``status_code`` and ``message``.
+    - ``HTTPException`` → passthrough with original status code and headers.
     - Any other ``Exception`` → 500.
 
-      * **Production**: body is sanitised to ``{"detail": "Internal server error"}``
-        to prevent stack traces or internal state from leaking to clients.
-      * **Development**: body also includes ``type`` and ``message`` for easier debugging.
+      * **Production**: ``detail`` is the generic ``"Internal server error"`` —
+        no stack traces or internal state leak to clients.
+      * **Development**: adds ``exception`` (class name) and
+        ``exception_message`` extension members for easier debugging.
 
       The full traceback is always logged via Loguru regardless of environment.
     """
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
-        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+        return problem_response(
+            422, "Request validation failed", request=request, errors=exc.errors()
+        )
 
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+        return problem_response(exc.status_code, exc.message, request=request)
 
     @app.exception_handler(HTTPException)
     async def _http_exception(request: Request, exc: HTTPException) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        # A structured detail (dict/list) is kept as the `errors` extension.
+        structured = not isinstance(exc.detail, str)
+        return problem_response(
+            exc.status_code,
+            None if structured else exc.detail,
+            request=request,
+            headers=exc.headers,
+            errors=exc.detail if structured else None,
+        )
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
@@ -42,15 +58,11 @@ def register_error_handlers(app: FastAPI, *, is_production: bool = True) -> None
             path=request.url.path,
         )
         if is_production:
-            return JSONResponse(
-                status_code=500,
-                content={"detail": "Internal server error"},
-            )
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "Internal server error",
-                "type": type(exc).__name__,
-                "message": str(exc),
-            },
+            return problem_response(500, "Internal server error", request=request)
+        return problem_response(
+            500,
+            "Internal server error",
+            request=request,
+            exception=type(exc).__name__,
+            exception_message=str(exc),
         )

@@ -2,7 +2,7 @@ import json
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 
-from pydantic import BeforeValidator, model_validator
+from pydantic import BeforeValidator, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -64,6 +64,19 @@ class Settings(BaseSettings):
     # Set e.g. ALLOWED_HOSTS=api.example.com,staging.example.com in production.
     ALLOWED_HOSTS: StrList = []
 
+    # URL prefix for every domain router (API versioning). Built-in operational
+    # routes (/live, /health, /metrics, /docs) are never prefixed.
+    # Set to "" to disable; must start with "/" otherwise.
+    API_PREFIX: str = "/v1"
+
+    @field_validator("API_PREFIX")
+    @classmethod
+    def _validate_api_prefix(cls, value: str) -> str:
+        value = value.rstrip("/")
+        if value and not value.startswith("/"):
+            raise ValueError("API_PREFIX must be empty or start with '/'")
+        return value
+
     # OpenAPI / Swagger UI
     OPENAPI_TITLE: str = "blitz"
     OPENAPI_DESCRIPTION: str = (
@@ -101,6 +114,13 @@ class Settings(BaseSettings):
     # When disabled (default) tracing adds zero overhead.
     OTEL_ENABLED: bool = False
     OTEL_ENDPOINT: str = ""  # e.g. http://localhost:4318/v1/traces
+    # Auth headers for hosted OTLP backends, in the OTel format
+    # "key=value,key2=value2" (e.g. "x-honeycomb-team=<api-key>").
+    #
+    # Convention: every secret setting is a SecretStr — it is masked in repr,
+    # logs, tracebacks and model_dump output. Unwrap it with get_secret_value
+    # only at the point of use.
+    OTEL_HEADERS: SecretStr = SecretStr("")
     OTEL_SERVICE_NAME: str = "blitz"
 
 

@@ -67,6 +67,7 @@ src/
 │       └── stream.py   # Async-generator streaming backend
 ├── errors/
 │   ├── exceptions.py   # AppError base class for domain errors
+│   ├── problem.py      # RFC 9457 Problem Details builder (problem_response)
 │   └── handlers.py     # Global exception handlers + error sanitisation
 ├── log/
 │   └── setup.py        # Loguru configuration (JSON in prod, pretty in dev)
@@ -216,7 +217,30 @@ The framework calls `make_router()` at startup to build the OpenAPI schema and
 instance by type with `state.get_domain(request, OrdersDomain)` — no string keys, no `cast()`
 (in real domains, do this in `dependencies.py` and inject the service via `Annotated[..., Depends]`).
 
+Domain routers are mounted under `API_PREFIX` (default `/v1`), so the router above serves
+`/v1/orders/{order_id}`. Built-in routes (`/live`, `/health`, `/metrics`, `/docs`) are never prefixed.
+
 ## Key extension points
+
+### Error responses (RFC 9457)
+
+Every error — exception handlers and middleware alike — is `application/problem+json`:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Order '42' not found",
+  "instance": "/v1/orders/42",
+  "request_id": "0f8fad5b..."
+}
+```
+
+Raise `AppError` subclasses (`NotFoundError`, `ConflictError`, …) or `HTTPException` and the
+global handlers do the rest. For a custom domain error handler, return
+`errors.problem.problem_response(status, detail, request=request, code=...)` — extra keyword
+arguments become extension members. Validation errors carry the field list in `errors`.
 
 ### Authentication & authorisation
 
@@ -349,6 +373,11 @@ See `.env.example` for all options. Key variables:
 | `METRICS_ENDPOINT_ENABLED` | `true`        | Expose `/metrics`                     |
 | `METRICS_REQUIRE_AUTH`     | `false`       | Gate `/metrics` behind auth           |
 | `SHUTDOWN_TIMEOUT_SECONDS` | `30.0`        | Drain timeout on SIGTERM              |
+| `API_PREFIX`               | `/v1`         | Prefix for domain routes (`""` = none) |
+| `OTEL_HEADERS`             | `""`          | OTLP auth headers `k=v,k2=v2` (secret) |
+
+List settings (`ALLOWED_ORIGINS`, `TRUSTED_PROXIES`, `ALLOWED_HOSTS`, `OPENAPI_SERVERS`) accept
+comma-separated (`a,b`) or JSON (`["a","b"]`) values.
 
 ## Built-in endpoints
 
@@ -364,5 +393,6 @@ See `.env.example` for all options. Key variables:
 - All source code lives under `src/`; each domain gets its own sub-package
 - `PYTHONPATH` is `src/` — import modules directly: `from config import Settings`
 - Settings are read once and cached; override via env vars or by passing `Settings()` to `create_app()`
+- Secret settings are typed `SecretStr` (masked in repr/logs/dumps); unwrap with `.get_secret_value()` only where used
 - In `production` environment: Loguru emits JSON, `/docs` is disabled, unhandled exceptions return sanitised `500` responses
 - Middleware execution order (outermost → innermost): TrustedHost → CORS → InFlight → Audit → SecurityHeaders → Timeout → SizeLimit → RateLimit → Context → Handler

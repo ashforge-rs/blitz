@@ -158,7 +158,8 @@ async def test_unhandled_exception_dev(test_settings):
         r = await c.get("/boom")
     assert r.status_code == 500
     body = r.json()
-    assert body["type"] == "RuntimeError"
+    assert body["exception"] == "RuntimeError"
+    assert body["exception_message"] == "something went wrong"
 
 
 # ---------------------------------------------------------------------------
@@ -279,3 +280,26 @@ async def test_request_context_with_dict_lifespan_state(app):
 
     assert messages[0]["status"] == 200
     assert scope["state"]["ctx"].request_id == "req-1"
+
+
+# ---------------------------------------------------------------------------
+# API prefix
+# ---------------------------------------------------------------------------
+
+
+async def test_domain_routes_mounted_under_api_prefix(client):
+    assert (await client.get("/v1/example/")).status_code == 200
+    assert (await client.get("/example/")).status_code == 404
+    assert (await client.get("/live")).status_code == 200  # operational routes unprefixed
+
+
+async def test_api_prefix_disabled(test_settings):
+    from domains.example import domain as example_domain
+
+    settings = Settings(**{**test_settings.model_dump(), "API_PREFIX": ""})
+    app = create_app(settings=settings, audit_backend=NoopAuditBackend(), domains=[example_domain])
+    async with (
+        LifespanManager(app),
+        AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c,
+    ):
+        assert (await c.get("/example/")).status_code == 200

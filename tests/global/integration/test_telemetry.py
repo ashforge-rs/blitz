@@ -48,3 +48,21 @@ async def test_requests_are_traced_natively_when_enabled():
     assert [s.name for s in server_spans] == ["GET /live"]
     assert server_spans[0].attributes["http.route"] == "/live"
     assert server_spans[0].resource.attributes["service.name"] == "blitz"
+
+
+def test_parse_otel_headers():
+    from telemetry.setup import parse_otel_headers
+
+    assert parse_otel_headers("x-honeycomb-team=abc, authorization=Basic dXM6cA==") == {
+        "x-honeycomb-team": "abc",
+        "authorization": "Basic dXM6cA==",
+    }
+    assert parse_otel_headers("") == {}
+    assert parse_otel_headers("garbage,=novalue") == {}
+
+
+def test_otel_headers_never_leak_in_repr_or_dump():
+    settings = _settings(OTEL_HEADERS="x-api-key=supersecret")
+    assert "supersecret" not in repr(settings)
+    assert "supersecret" not in str(settings.model_dump())
+    assert settings.OTEL_HEADERS.get_secret_value() == "x-api-key=supersecret"

@@ -11,7 +11,7 @@ async def _create(client: AsyncClient, name: str = "Widget", data: dict | None =
     payload: dict = {"name": name}
     if data is not None:
         payload["data"] = data
-    r = await client.post("/example/", json=payload)
+    r = await client.post("/v1/example/", json=payload)
     assert r.status_code == 201
     return r.json()
 
@@ -22,7 +22,7 @@ async def _create(client: AsyncClient, name: str = "Widget", data: dict | None =
 
 
 async def test_list_empty_on_fresh_app(client: AsyncClient) -> None:
-    r = await client.get("/example/")
+    r = await client.get("/v1/example/")
     assert r.status_code == 200
     assert r.json() == []
 
@@ -30,7 +30,7 @@ async def test_list_empty_on_fresh_app(client: AsyncClient) -> None:
 async def test_list_returns_created_items(client: AsyncClient) -> None:
     await _create(client, "Alpha")
     await _create(client, "Beta")
-    r = await client.get("/example/")
+    r = await client.get("/v1/example/")
     names = {i["name"] for i in r.json()}
     assert names == {"Alpha", "Beta"}
 
@@ -41,7 +41,7 @@ async def test_list_returns_created_items(client: AsyncClient) -> None:
 
 
 async def test_create_returns_201_with_body(client: AsyncClient) -> None:
-    r = await client.post("/example/", json={"name": "Widget"})
+    r = await client.post("/v1/example/", json={"name": "Widget"})
     assert r.status_code == 201
     body = r.json()
     assert body["name"] == "Widget"
@@ -51,23 +51,23 @@ async def test_create_returns_201_with_body(client: AsyncClient) -> None:
 
 
 async def test_create_with_data_payload(client: AsyncClient) -> None:
-    r = await client.post("/example/", json={"name": "Gadget", "data": {"sku": "G-001"}})
+    r = await client.post("/v1/example/", json={"name": "Gadget", "data": {"sku": "G-001"}})
     assert r.status_code == 201
     assert r.json()["data"] == {"sku": "G-001"}
 
 
 async def test_create_empty_name_returns_422(client: AsyncClient) -> None:
-    r = await client.post("/example/", json={"name": ""})
+    r = await client.post("/v1/example/", json={"name": ""})
     assert r.status_code == 422
 
 
 async def test_create_missing_name_returns_422(client: AsyncClient) -> None:
-    r = await client.post("/example/", json={})
+    r = await client.post("/v1/example/", json={})
     assert r.status_code == 422
 
 
 async def test_create_name_too_long_returns_422(client: AsyncClient) -> None:
-    r = await client.post("/example/", json={"name": "x" * 256})
+    r = await client.post("/v1/example/", json={"name": "x" * 256})
     assert r.status_code == 422
 
 
@@ -78,13 +78,13 @@ async def test_create_name_too_long_returns_422(client: AsyncClient) -> None:
 
 async def test_get_existing_item(client: AsyncClient) -> None:
     created = await _create(client, "Widget")
-    r = await client.get(f"/example/{created['id']}")
+    r = await client.get(f"/v1/example/{created['id']}")
     assert r.status_code == 200
     assert r.json() == created
 
 
 async def test_get_missing_item_returns_404(client: AsyncClient) -> None:
-    r = await client.get("/example/does-not-exist")
+    r = await client.get("/v1/example/does-not-exist")
     assert r.status_code == 404
     assert "not found" in r.json()["detail"]
 
@@ -96,7 +96,7 @@ async def test_get_missing_item_returns_404(client: AsyncClient) -> None:
 
 async def test_update_name(client: AsyncClient) -> None:
     created = await _create(client, "Old")
-    r = await client.patch(f"/example/{created['id']}", json={"name": "New"})
+    r = await client.patch(f"/v1/example/{created['id']}", json={"name": "New"})
     assert r.status_code == 200
     assert r.json()["name"] == "New"
     assert r.json()["id"] == created["id"]
@@ -104,26 +104,26 @@ async def test_update_name(client: AsyncClient) -> None:
 
 async def test_update_data(client: AsyncClient) -> None:
     created = await _create(client, "Widget")
-    r = await client.patch(f"/example/{created['id']}", json={"data": {"k": "v"}})
+    r = await client.patch(f"/v1/example/{created['id']}", json={"data": {"k": "v"}})
     assert r.status_code == 200
     assert r.json()["data"] == {"k": "v"}
 
 
 async def test_update_partial_preserves_other_fields(client: AsyncClient) -> None:
     created = await _create(client, "Widget", data={"x": 1})
-    r = await client.patch(f"/example/{created['id']}", json={"name": "New"})
+    r = await client.patch(f"/v1/example/{created['id']}", json={"name": "New"})
     assert r.status_code == 200
     assert r.json()["data"] == {"x": 1}
 
 
 async def test_update_missing_item_returns_404(client: AsyncClient) -> None:
-    r = await client.patch("/example/ghost", json={"name": "X"})
+    r = await client.patch("/v1/example/ghost", json={"name": "X"})
     assert r.status_code == 404
 
 
 async def test_update_empty_body_is_noop(client: AsyncClient) -> None:
     created = await _create(client, "Widget")
-    r = await client.patch(f"/example/{created['id']}", json={})
+    r = await client.patch(f"/v1/example/{created['id']}", json={})
     assert r.status_code == 200
     assert r.json()["name"] == "Widget"
 
@@ -135,26 +135,26 @@ async def test_update_empty_body_is_noop(client: AsyncClient) -> None:
 
 async def test_delete_existing_item_returns_204(client: AsyncClient) -> None:
     created = await _create(client, "Widget")
-    r = await client.delete(f"/example/{created['id']}")
+    r = await client.delete(f"/v1/example/{created['id']}")
     assert r.status_code == 204
 
 
 async def test_delete_removes_item_from_list(client: AsyncClient) -> None:
     created = await _create(client, "Widget")
-    await client.delete(f"/example/{created['id']}")
-    r = await client.get("/example/")
+    await client.delete(f"/v1/example/{created['id']}")
+    r = await client.get("/v1/example/")
     assert all(i["id"] != created["id"] for i in r.json())
 
 
 async def test_delete_missing_item_returns_404(client: AsyncClient) -> None:
-    r = await client.delete("/example/ghost")
+    r = await client.delete("/v1/example/ghost")
     assert r.status_code == 404
 
 
 async def test_delete_twice_returns_404_second_time(client: AsyncClient) -> None:
     created = await _create(client, "Widget")
-    await client.delete(f"/example/{created['id']}")
-    r = await client.delete(f"/example/{created['id']}")
+    await client.delete(f"/v1/example/{created['id']}")
+    r = await client.delete(f"/v1/example/{created['id']}")
     assert r.status_code == 404
 
 
@@ -164,10 +164,10 @@ async def test_delete_twice_returns_404_second_time(client: AsyncClient) -> None
 
 
 async def test_request_id_echoed_in_response_header(client: AsyncClient) -> None:
-    r = await client.get("/example/", headers={"X-Request-ID": "test-123"})
+    r = await client.get("/v1/example/", headers={"X-Request-ID": "test-123"})
     assert r.headers.get("x-request-id") == "test-123"
 
 
 async def test_request_id_generated_when_absent(client: AsyncClient) -> None:
-    r = await client.get("/example/")
+    r = await client.get("/v1/example/")
     assert len(r.headers["x-request-id"]) == 32  # UUID4 hex

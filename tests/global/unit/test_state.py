@@ -35,6 +35,6 @@ def test_get_domain_wrong_type_raises_type_error():
 async def test_example_domain_indexed_by_type(client, app):
     from domains.example.domain import ItemsDomain
 
-    r = await client.get("/example/")
+    r = await client.get("/v1/example/")
     assert r.status_code == 200
     assert isinstance(app.state.domains_by_type[ItemsDomain], ItemsDomain)

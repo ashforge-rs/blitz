@@ -1,7 +1,7 @@
 import asyncio
 from typing import TYPE_CHECKING
 
-from starlette.responses import JSONResponse
+from errors.problem import problem_response
 
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -43,5 +43,5 @@ class TimeoutMiddleware:
         except TimeoutError:
             if response_started:
                 raise
-            response = JSONResponse({"detail": "Request timed out"}, status_code=504)
+            response = problem_response(504, "Request timed out")
             await response(scope, receive, send)

@@ -101,6 +101,8 @@ All settings are read from environment variables or a `.env` file. See `.env.exa
 | `TRUSTED_PROXIES`          | `[]`          | CIDRs of trusted reverse proxies for XFF resolution |
 | `OTEL_ENABLED`             | `false`       | Enable OpenTelemetry tracing                        |
 | `OTEL_ENDPOINT`            | `""`          | OTLP HTTP collector URL                             |
+| `OTEL_HEADERS`             | `""`          | OTLP auth headers `k=v,k2=v2` (secret, masked)      |
+| `API_PREFIX`               | `/v1`         | Prefix for domain routes (`""` disables)            |
 | `METRICS_ENDPOINT_ENABLED` | `true`        | Expose `/metrics`                                   |
 
 ---
@@ -114,6 +116,10 @@ All settings are read from environment variables or a `.env` file. See `.env.exa
 | `GET /metrics` | Prometheus exposition format                                |
 | `GET /docs`    | Swagger UI (development only)                               |
 
+Domain routes are served under `API_PREFIX` (default `/v1`, e.g. `/v1/example/`). All errors are
+RFC 9457 Problem Details (`application/problem+json`) with `type`, `title`, `status`, `detail`,
+`instance` and `request_id`.
+
 ---
 
 ## Development commands
@@ -122,7 +128,7 @@ All settings are read from environment variables or a `.env` file. See `.env.exa
 | ----------------------- | ---------------------------------------------------------- |
 | `make install`          | Install all dependencies via `uv sync`                     |
 | `make dev`              | Start dev server with hot-reload (`services.api.main:app`) |
-| `make check`            | Format and lint with Ruff                                  |
+| `make check`            | Format and lint with Ruff, then type-check with mypy       |
 | `make test`             | Run all tests                                              |
 | `make test-unit`        | Unit tests only (global + all domains)                     |
 | `make test-integration` | Integration tests only (global + all domains)              |
@@ -138,7 +144,7 @@ All settings are read from environment variables or a `.env` file. See `.env.exa
 - **Audit backend:** implement `AuditBackend` and pass it to `create_app(audit_backend=...)`. Default writes structured JSON via Loguru.
 - **Health checks:** pass async callables to `create_app(health_checks=[...])`.
 - **Rate limit storage:** pass any async `limits.aio.storage.Storage` to `create_app(rate_limit_storage=...)`. Default is in-memory; use Redis for multi-worker deployments.
-- **Metrics:** use `metrics.registry.counter` / `gauge` / `histogram` to register custom Prometheus metrics.
+- **Metrics:** use `metrics.registry.counter` / `histogram` to register custom Prometheus metrics.
 - **Tracing:** set `OTEL_ENABLED=true` and `OTEL_ENDPOINT` to send traces to any OTLP-compatible collector (Jaeger, Grafana Tempo, Honeycomb, Datadog).
 
 ---

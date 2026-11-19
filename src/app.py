@@ -68,7 +68,8 @@ def create_app(
         A list of domain modules, each exposing:
 
         - ``make_router() -> APIRouter`` — called once at app-creation time;
-          returns the router with all routes for this domain.
+          returns the router with all routes for this domain.  It is mounted
+          under ``settings.API_PREFIX`` (default ``/v1``).
         - ``async bootstrap(settings: Settings, **kwargs) -> Any`` — called
           during lifespan startup; initialise DB pools, clients, etc. and return
           the domain instance.  The instance is stored on
@@ -161,7 +162,7 @@ def create_app(
     # --- Domain routes (registered at app-creation time so OpenAPI schema is complete) ---
     for domain_module in app.state._domain_modules:
         if hasattr(domain_module, "make_router"):
-            app.include_router(domain_module.make_router())
+            app.include_router(domain_module.make_router(), prefix=settings.API_PREFIX)
         if hasattr(domain_module, "register_exception_handlers"):
             domain_module.register_exception_handlers(app)
 

@@ -1,11 +1,12 @@
+import json
 from typing import TYPE_CHECKING
 
-from starlette.responses import JSONResponse
+from errors.problem import PROBLEM_JSON, problem, problem_response
 
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-_TOO_LARGE_BODY = b'{"detail":"Request body too large"}'
+_TOO_LARGE_BODY = json.dumps(problem(413, "Request body too large")).encode()
 
 
 def _parse_content_length(raw: bytes) -> int | None:
@@ -40,11 +41,11 @@ class RequestSizeLimitMiddleware:
         if raw_cl is not None:
             content_length = _parse_content_length(raw_cl)
             if content_length is None:
-                response = JSONResponse({"detail": "Invalid Content-Length header"}, 400)
+                response = problem_response(400, "Invalid Content-Length header")
                 await response(scope, receive, send)
                 return
             if content_length > self.max_bytes:
-                response = JSONResponse({"detail": "Request body too large"}, status_code=413)
+                response = problem_response(413, "Request body too large")
                 await response(scope, receive, send)
                 return
 
@@ -77,7 +78,7 @@ class RequestSizeLimitMiddleware:
                         "type": "http.response.start",
                         "status": 413,
                         "headers": [
-                            (b"content-type", b"application/json"),
+                            (b"content-type", PROBLEM_JSON.encode()),
                             (b"content-length", str(len(_TOO_LARGE_BODY)).encode()),
                         ],
                     }

@@ -26,6 +26,16 @@ def telemetry_config(settings: Settings) -> TelemetryConfig:
     return {"auto_configure": False}
 
 
+def parse_otel_headers(raw: str) -> dict[str, str]:
+    """Parse OTel-format headers ``"k1=v1,k2=v2"`` (values may contain ``=``)."""
+    headers: dict[str, str] = {}
+    for pair in raw.split(","):
+        key, sep, value = pair.partition("=")
+        if sep and key.strip():
+            headers[key.strip()] = value.strip()
+    return headers
+
+
 def setup_telemetry(settings: Settings) -> None:
     """
     Configure the global OpenTelemetry TracerProvider.
@@ -54,7 +64,10 @@ def setup_telemetry(settings: Settings) -> None:
     if settings.OTEL_ENDPOINT:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
-        exporter = OTLPSpanExporter(endpoint=settings.OTEL_ENDPOINT)
+        exporter = OTLPSpanExporter(
+            endpoint=settings.OTEL_ENDPOINT,
+            headers=parse_otel_headers(settings.OTEL_HEADERS.get_secret_value()) or None,
+        )
         provider.add_span_processor(BatchSpanProcessor(exporter))
 
     trace.set_tracer_provider(provider)

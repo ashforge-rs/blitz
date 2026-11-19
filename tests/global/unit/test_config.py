@@ -29,3 +29,13 @@ def test_allowed_origins_from_env(monkeypatch):
 def test_cors_credentials_with_wildcard_rejected():
     with pytest.raises(ValueError, match="CORS_ALLOW_CREDENTIALS"):
         Settings(_env_file=None, CORS_ALLOW_CREDENTIALS=True, ALLOWED_ORIGINS=["*"])
+
+
+@pytest.mark.parametrize(("raw", "expected"), [("/v1", "/v1"), ("/v2/", "/v2"), ("", "")])
+def test_api_prefix_normalised(raw, expected):
+    assert expected == Settings(_env_file=None, API_PREFIX=raw).API_PREFIX
+
+
+def test_api_prefix_requires_leading_slash():
+    with pytest.raises(ValueError, match="API_PREFIX"):
+        Settings(_env_file=None, API_PREFIX="v1")
