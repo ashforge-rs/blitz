@@ -137,7 +137,7 @@ All settings are read from environment variables or a `.env` file. See `.env.exa
 - **Authentication:** implement `AuthProvider` and pass it to `create_app(auth_provider=...)`. Protect routes with `Depends(get_auth_context)`.
 - **Audit backend:** implement `AuditBackend` and pass it to `create_app(audit_backend=...)`. Default writes structured JSON via Loguru.
 - **Health checks:** pass async callables to `create_app(health_checks=[...])`.
-- **Rate limit storage:** pass any `limits.storage.Storage` to `create_app(rate_limit_storage=...)`. Default is in-memory; use Redis for multi-worker deployments.
+- **Rate limit storage:** pass any async `limits.aio.storage.Storage` to `create_app(rate_limit_storage=...)`. Default is in-memory; use Redis for multi-worker deployments.
 - **Metrics:** use `metrics.registry.counter` / `gauge` / `histogram` to register custom Prometheus metrics.
 - **Tracing:** set `OTEL_ENABLED=true` and `OTEL_ENDPOINT` to send traces to any OTLP-compatible collector (Jaeger, Grafana Tempo, Honeycomb, Datadog).
 

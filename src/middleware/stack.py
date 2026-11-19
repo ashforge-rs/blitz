@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
-from limits.storage import Storage
+from limits.aio.storage import Storage
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -51,6 +51,7 @@ def register_middleware(app: FastAPI, settings: Settings, *, rate_limit_storage:
         RateLimitMiddleware,
         rate_limit=settings.RATE_LIMIT,
         storage=rate_limit_storage,
+        trusted_proxies=settings.TRUSTED_PROXIES,
         exempt_paths={"/live", "/health"},
     )
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_SIZE_BYTES)

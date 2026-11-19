@@ -1,10 +1,25 @@
 from __future__ import annotations
 
+import json
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BeforeValidator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+def _split_list(value: Any) -> Any:
+    """Accept list env vars as comma-separated (``a,b``) or JSON (``["a","b"]``)."""
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if stripped.startswith("["):
+        return json.loads(stripped)
+    return [item.strip() for item in stripped.split(",") if item.strip()]
+
+
+# A list[str] setting that reads naturally from an env var: ``A,B,C``.
+type StrList = Annotated[list[str], NoDecode, BeforeValidator(_split_list)]
 
 
 class Settings(BaseSettings):
@@ -26,7 +41,7 @@ class Settings(BaseSettings):
     RATE_LIMIT: str = "100/minute"
 
     # CORS
-    ALLOWED_ORIGINS: list[str] = ["*"]
+    ALLOWED_ORIGINS: StrList = ["*"]
     # Set to True only when ALLOWED_ORIGINS lists explicit origins (not "*").
     # Browsers reject credentialed cross-origin requests to wildcard origins;
     # Starlette raises ValueError if you combine the two.
@@ -45,11 +60,11 @@ class Settings(BaseSettings):
     # Set to your load-balancer CIDR(s) in production; leave empty to trust only
     # the direct peer (safest default).
     # Example: TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12
-    TRUSTED_PROXIES: list[str] = []
+    TRUSTED_PROXIES: StrList = []
 
     # Allowed Host header values. Empty list = allow all (dev default).
     # Set e.g. ALLOWED_HOSTS=api.example.com,staging.example.com in production.
-    ALLOWED_HOSTS: list[str] = []
+    ALLOWED_HOSTS: StrList = []
 
     # OpenAPI / Swagger UI
     OPENAPI_TITLE: str = "blitz"
@@ -68,7 +83,7 @@ class Settings(BaseSettings):
     OPENAPI_CONTACT_URL: str = ""
     OPENAPI_LICENSE_NAME: str = ""
     OPENAPI_LICENSE_URL: str = ""
-    OPENAPI_SERVERS: list[str] = []  # comma-separated server URLs in .env
+    OPENAPI_SERVERS: StrList = []  # comma-separated server URLs in .env
 
     # Prometheus metrics
     METRICS_ENDPOINT_ENABLED: bool = True

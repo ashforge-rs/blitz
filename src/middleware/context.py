@@ -1,11 +1,26 @@
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from context import RequestContext, _ctx_var
+
+# Accept client-supplied request IDs only if they are short and made of safe
+# characters (UUIDs, ULIDs, trace IDs).  Anything else — oversized values,
+# whitespace, control characters that could forge log lines — is replaced with
+# a freshly generated ID.
+_REQUEST_ID_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+
+
+def _request_id_from(raw: bytes) -> str:
+    try:
+        candidate = raw.decode("ascii")
+    except UnicodeDecodeError:
+        return uuid4().hex
+    return candidate if _REQUEST_ID_RE.fullmatch(candidate) else uuid4().hex
 
 
 class RequestContextMiddleware:
@@ -16,7 +31,9 @@ class RequestContextMiddleware:
     and is also pushed into the module-level ``ContextVar`` for utility code
     that does not hold a reference to the request.
 
-    Appends an ``X-Request-ID`` header to every response.
+    Appends an ``X-Request-ID`` header to every response.  A client-supplied
+    ``X-Request-ID`` is reused only if it is at most 128 characters of
+    ``[A-Za-z0-9._:-]``; otherwise a new UUID4 hex is generated.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -29,7 +46,7 @@ class RequestContextMiddleware:
 
         # Reconstruct lightweight header view from raw ASGI scope
         headers = dict(scope.get("headers", []))
-        request_id = headers.get(b"x-request-id", b"").decode() or uuid4().hex
+        request_id = _request_id_from(headers.get(b"x-request-id", b""))
 
         # Store context on request.state so route handlers can reach it via
         # request.state.ctx.  Go through Request.state rather than scope["state"]

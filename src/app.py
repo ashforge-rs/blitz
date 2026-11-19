@@ -5,7 +5,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from fastapi import FastAPI
-from limits.storage import MemoryStorage, Storage
+from limits.aio.storage import MemoryStorage, Storage
 
 from audit.backend import AuditBackend, AuditIntegrity
 from audit.backends.loguru import LoguruAuditBackend
@@ -55,11 +55,11 @@ def create_app(
         :class:`~audit.integrity.SequenceIntegrity` or
         :class:`~audit.integrity.CombinedIntegrity`.
     rate_limit_storage:
-        A :class:`limits.storage.Storage` implementation used by the rate
-        limiter.  Defaults to :class:`limits.storage.MemoryStorage` (in-process,
-        single-worker).  Pass any ``limits``-compatible storage backend to share
-        state across workers — for example a custom ``RedisStorage``,
-        ``MemcachedStorage``, or your own implementation.
+        An **async** :class:`limits.aio.storage.Storage` implementation used
+        by the rate limiter.  Defaults to
+        :class:`limits.aio.storage.MemoryStorage` (in-process, single-worker).
+        Pass any async ``limits`` storage to share state across workers — for
+        example ``limits.aio.storage.RedisStorage("async+redis://...")``.
     health_checks:
         A list of async callables each returning a dict with at least
         ``{"name": str, "healthy": bool}``.

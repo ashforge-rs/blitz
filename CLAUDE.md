@@ -275,16 +275,21 @@ app = create_app(health_checks=[check_database])
 
 ### Rate limit storage
 
-The rate limiter accepts any [`limits.storage.Storage`](https://limits.readthedocs.io/en/stable/storage.html) implementation.
+The rate limiter uses the **async** `limits.aio` API and accepts any
+[`limits.aio.storage.Storage`](https://limits.readthedocs.io/en/stable/async.html) implementation,
+so network-backed storages never block the event loop.
 Default is `MemoryStorage` (single-process). Pass a different backend to share state across workers:
 
 ```python
-from limits.storage import MemoryStorage   # built-in default
-# from limits.storage import RedisStorage  # pip install limits[redis]
-# from limits.storage import MemcachedStorage
+from limits.aio.storage import MemoryStorage   # built-in default
+# from limits.aio.storage import RedisStorage  # uv add "limits[async-redis]"
+# RedisStorage("async+redis://localhost:6379")
 
 app = create_app(rate_limit_storage=MemoryStorage())
 ```
+
+If the storage backend errors, requests are allowed through (fail-open) and a warning is logged.
+`Retry-After` on a `429` is the number of seconds until the window frees a slot.
 
 ### Custom metrics
 

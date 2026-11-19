@@ -5,7 +5,7 @@ import time
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from audit.backend import AuditEvent, AuditEventType, AuditResult, AuditSeverity
-from middleware.rate_limit import _resolve_ip
+from middleware.rate_limit import _resolve_ip, parse_networks
 
 
 class AuditMiddleware:
@@ -51,7 +51,9 @@ class AuditMiddleware:
             if audit_backend is not None:
                 assert app_obj is not None
                 app_settings = getattr(app_obj.state, "settings", None)
-                trusted = frozenset(app_settings.TRUSTED_PROXIES if app_settings else [])
+                trusted = parse_networks(
+                    tuple(app_settings.TRUSTED_PROXIES if app_settings else ())
+                )
 
                 from starlette.requests import Request
 
