@@ -18,11 +18,18 @@ make dev          # http://localhost:8000
 | `make dev`     | Start dev server with hot-reload (`services.api.main:app`) |
 | `make lint`    | Run Ruff linter                                            |
 | `make fmt`     | Auto-format with Ruff                                      |
-| `make check`   | Format then lint                                           |
+| `make check`   | Format, lint, then mypy type-check                         |
 | `make test`    | Run pytest                                                 |
+| `make test-unit` / `test-integration` / `test-fuzz` | Run one test tier      |
+| `make coverage` | pytest with coverage report (fails under 80 %)           |
+| `make openapi` | Generate the OpenAPI schema (`scripts/generate_openapi.py`) |
+| `make docker-build SERVICE=api` | Build a service image locally         |
+| `make docker-run SERVICE=api`   | Run a locally built service image     |
 | `make clean`   | Remove caches and build artifacts                          |
 
-**Tools:** `uv` (package management) and `ruff` (lint + format) — no other tooling.
+**Python:** 3.15+ (`requires-python = ">=3.15"`; Docker images use `python:3.15-slim`).
+
+**Tools:** `uv` (package management), `ruff` (lint + format), `mypy` (strict type-check) and `pytest` — no other tooling. `uv run mypy src/` must stay clean; CI enforces it.
 
 ## Project structure
 
@@ -58,6 +65,7 @@ src/
 │       ├── multi.py    # Fan-out to multiple backends simultaneously
 │       └── stream.py   # Async-generator streaming backend
 ├── errors/
+│   ├── exceptions.py   # AppError base class for domain errors
 │   └── handlers.py     # Global exception handlers + error sanitisation
 ├── log/
 │   └── setup.py        # Loguru configuration (JSON in prod, pretty in dev)
@@ -71,6 +79,7 @@ src/
 ├── domains/            # Bounded-context business logic (one sub-package per domain)
 │   └── example/        # ← reference domain (rename or delete)
 │       ├── models.py       # Pydantic models
+│       ├── errors.py       # Typed domain errors (error codes, not strings)
 │       ├── repository.py   # Data-access layer (depends on KeyValueStore protocol)
 │       ├── service.py      # Business logic (depends on repository)
 │       ├── domain.py       # bootstrap() + make_router() + Domain container
@@ -154,6 +163,7 @@ class OrderService(Service):
 ```python
 # src/domains/orders/domain.py
 from __future__ import annotations
+from typing import TYPE_CHECKING
 from fastapi import APIRouter, Request
 from store.memory import InMemoryStore
 from .models import Order

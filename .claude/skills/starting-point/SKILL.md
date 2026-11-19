@@ -146,7 +146,7 @@ Replace every occurrence of the placeholder owner (`@ashforge-rs`) with
 If `{python_version}` differs from the current `PYTHON_PRIMARY`:
 - Update `PYTHON_PRIMARY` in both workflow `env:` blocks.
 - Update the matrix literal `["3.15"]` — use `["{python_version}", ...]`
-  keeping the latest stable version as the second entry.
+  and keep the latest stable version (currently `3.15`) in the list if it differs.
 - Update the coverage upload `if:` guard to the new primary version.
 
 ### 3h — AuthProvider stub (only if `auth_required` is `yes`)

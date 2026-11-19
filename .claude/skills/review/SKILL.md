@@ -227,9 +227,9 @@ Output a structured report in this exact format:
 | # | Severity | Category | File | Finding |
 |---|---|---|---|---|
 | 1 | 🔴 CRITICAL | Security | `src/auth/dependency.py:42` | … |
-| 2 | 🟠 HIGH | Architecture | `src/orders/service.py:18` | … |
+| 2 | 🟠 HIGH | Architecture | `src/domains/orders/service.py:18` | … |
 | 3 | 🟡 WARNING | Tests | `tests/domains/orders/unit/test_service.py` | … |
-| 4 | 🔵 INFO | Style | `src/orders/models.py:5` | … |
+| 4 | 🔵 INFO | Style | `src/domains/orders/models.py:5` | … |
 
 Severity scale:
 - 🔴 **CRITICAL** — security vulnerability, data loss risk, or quality gate failure

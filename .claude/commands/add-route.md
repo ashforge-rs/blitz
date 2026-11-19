@@ -18,11 +18,11 @@ Arguments: $ARGUMENTS
 
 3. Add at least one pytest test in `tests/test_<name>.py` using the `client` fixture from `conftest.py`.
 
-4. Run `uv run ruff check --fix src/ tests/` and `uv run ruff format src/ tests/` after creating the files.
+4. Run `uv run ruff check --fix src/ tests/`, `uv run ruff format src/ tests/` and `uv run mypy src/` after creating the files.
 
 ## Conventions
 
 - Line length: 100
 - `from __future__ import annotations` on every new file
-- No `mypy` — Ruff only
+- Fully type-annotated — `mypy` runs in strict mode and must stay clean
 - No bare `except:` — always catch a specific exception type
