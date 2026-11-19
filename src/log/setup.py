@@ -40,12 +40,19 @@ def configure_logging(level: str = "INFO", json: bool = False) -> None:
             enqueue=True,
         )
 
-    # Intercept all stdlib logging
+    # Intercept all stdlib logging. Loggers without handlers propagate to the
+    # root intercept handler. Loggers that have their own handlers (e.g. those
+    # uvicorn configures) get them swapped for the intercept handler.
+    #
+    # Loggers that were deliberately silenced (no handlers, propagate=False,
+    # which is how uvicorn's --no-access-log disables "uvicorn.access") are left
+    # alone. Re-attaching a handler would turn them back on.
     logging.basicConfig(handlers=[_InterceptHandler()], level=0, force=True)
     for name in list(logging.root.manager.loggerDict):
         log = logging.getLogger(name)
-        log.handlers = [_InterceptHandler()]
-        log.propagate = False
+        if log.handlers:
+            log.handlers = [_InterceptHandler()]
+            log.propagate = False
 
 
 def get_logger(name: str) -> loguru.Logger:
