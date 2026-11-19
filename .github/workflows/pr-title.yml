@@ -40,7 +40,7 @@ jobs:
             # Types and scopes mirror .github/conventional-commits.yml.
             - name: Validate PR title
               id: lint
-              uses: amannn/action-semantic-pull-request@v6
+              uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
               continue-on-error: true
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -96,7 +96,7 @@ jobs:
             # The github-script step creates both labels if they don't exist, then
             # adds the appropriate one and removes the other.
             - name: Update PR labels
-              uses: actions/github-script@v9
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
               env:
                   OUTCOME: ${{ steps.lint.outcome }}
               with:

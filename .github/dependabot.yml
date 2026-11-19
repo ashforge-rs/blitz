@@ -62,3 +62,43 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+
+  # Base images in Dockerfile and src/services/*/Dockerfile (python, uv).
+  - package-ecosystem: "docker"
+    directories: ["/", "/src/services/*"]
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    rebase-strategy: "auto"
+    commit-message:
+      prefix: "build(deps)"
+      include: "scope"
+    groups:
+      docker-images:
+        patterns: ["*"]
+    ignore:
+      # A Python minor bump also needs requires-python, ruff/mypy targets and
+      # CI changes — do it as a deliberate upgrade, not a Dependabot PR.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # Hook revisions in .pre-commit-config.yaml.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    rebase-strategy: "auto"
+    commit-message:
+      prefix: "chore(deps-dev)"
+      include: "scope"
+    groups:
+      pre-commit-hooks:
+        patterns: ["*"]
+    labels:
+      - "dependencies"

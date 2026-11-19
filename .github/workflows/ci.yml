@@ -27,6 +27,12 @@ name: CI
 #   # ── Optional: allow manual triggering from the Actions tab ──────────────
 #   # workflow_dispatch:
 
+# ── Token permissions ────────────────────────────────────────────────────────
+# Least privilege: read-only by default. Jobs that need more (the Docker
+# build pushing to GHCR) request it explicitly.
+permissions:
+  contents: read
+
 # ── Global environment variables ─────────────────────────────────────────────
 # PYTHON_PRIMARY  — used for lint, type-check, coverage upload, and Docker builds.
 # PYTHON_LATEST   — added to the test matrix for forward-compat checks.
@@ -53,11 +59,11 @@ jobs:
     name: Lint & Type-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "latest"
+          version: "0.13.7" # keep in sync with [tool.uv] required-version
           enable-cache: true # caches the uv download + the .venv between runs
           python-version: ${{ env.PYTHON_PRIMARY }}
 
@@ -73,10 +79,12 @@ jobs:
       - name: mypy
         run: uv run mypy src/
 
-      # ── Optional: bandit security scan ────────────────────────────────────
-      # Requires: uv add --dev bandit
-      # - name: Bandit security scan
-      #   run: uv run bandit -r src/ -ll
+      # Security lint (bandit rules) runs as part of `ruff check` via the S rule set.
+
+      - name: Dependency vulnerability audit
+        # Checks every locked package against the OSV database.
+        # `uv audit` is a preview feature; the flag acknowledges that.
+        run: uv audit --frozen --preview-features audit-command
 
   # ────────────────────────────────────────────────────────────────────────────
   # test — pytest on a matrix of Python versions.
@@ -98,11 +106,11 @@ jobs:
         python-version: ["3.15"]
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "latest"
+          version: "0.13.7" # keep in sync with [tool.uv] required-version
           enable-cache: true
           python-version: ${{ matrix.python-version }}
 
@@ -118,7 +126,7 @@ jobs:
       # secret set in Settings → Secrets → Actions (for private repos).
       # Public repos can omit the token.
       - name: Upload coverage
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         if: matrix.python-version == env.PYTHON_PRIMARY
         with:
           files: coverage.xml
@@ -156,7 +164,7 @@ jobs:
       services: ${{ steps.diff.outputs.services }}
       has_changes: ${{ steps.diff.outputs.has_changes }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history is required so we can diff against the merge base on PRs.
           # On push events only HEAD^ is needed, but fetch-depth: 0 covers both.
@@ -240,6 +248,9 @@ jobs:
       fail-fast: false # build remaining services even if one fails
       matrix:
         service: ${{ fromJson(needs.detect.outputs.services) }}
+    permissions:
+      contents: read
+      packages: write # docker-build.yml pushes to ghcr.io on master
     uses: ./.github/workflows/docker-build.yml
     with:
       service: ${{ matrix.service }}
