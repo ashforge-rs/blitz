@@ -56,10 +56,10 @@ jobs:
                   manifest-file: .release-please-manifest.json
 
             # The remaining steps only run when a release was actually created.
-            - uses: actions/checkout@v6
+            - uses: actions/checkout@v7
               if: ${{ steps.release.outputs.release_created }}
 
-            - uses: astral-sh/setup-uv@v8.0.0
+            - uses: astral-sh/setup-uv@v10.3.3
               if: ${{ steps.release.outputs.release_created }}
               with:
                   version: "latest"
@@ -74,7 +74,7 @@ jobs:
             # ── Optional: upload dist/ as a GitHub Release asset ──────────────
             # - name: Upload dist to GitHub Release
             #   if: ${{ steps.release.outputs.release_created }}
-            #   uses: softprops/action-gh-release@v2
+            #   uses: softprops/action-gh-release@v3
             #   with:
             #     tag_name: ${{ steps.release.outputs.tag_name }}
             #     files: dist/*
@@ -109,7 +109,7 @@ jobs:
         outputs:
             services: ${{ steps.discover.outputs.services }}
         steps:
-            - uses: actions/checkout@v6
+            - uses: actions/checkout@v7
 
             - name: Discover services with Dockerfiles
               id: discover
