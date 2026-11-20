@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from starlette.exceptions import HTTPException
 
+from errors.domain import DomainFailure
 from errors.exceptions import AppError
 from errors.problem import problem_response
 
@@ -17,6 +18,8 @@ def register_error_handlers(app: FastAPI, *, is_production: bool = True) -> None
 
     - ``RequestValidationError`` → 422 with field-level ``errors``.
     - ``AppError`` → its ``status_code`` and ``message``.
+    - ``DomainFailure`` (a route returned ``Failure(DomainError)``) → the error's
+      ``status``, ``detail`` and ``code``; 5xx messages are logged, not sent.
     - ``HTTPException`` → passthrough with original status code and headers.
     - Any other ``Exception`` → 500.
 
@@ -37,6 +40,19 @@ def register_error_handlers(app: FastAPI, *, is_production: bool = True) -> None
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError) -> JSONResponse:
         return problem_response(exc.status_code, exc.message, request=request)
+
+    @app.exception_handler(DomainFailure)
+    async def _domain_failure(request: Request, exc: DomainFailure) -> JSONResponse:
+        error = exc.error
+        if error.status >= 500:
+            logger.error(
+                "Domain failure",
+                code=str(error.code),
+                message=error.message,
+                method=request.method,
+                path=request.url.path,
+            )
+        return problem_response(error.status, error.detail, request=request, code=error.code)
 
     @app.exception_handler(HTTPException)
     async def _http_exception(request: Request, exc: HTTPException) -> JSONResponse:

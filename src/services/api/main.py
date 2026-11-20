@@ -2,22 +2,12 @@ import uvicorn
 
 from app import create_app
 from config import get_settings
+from services.api.domains import DOMAINS
 
-# ---------------------------------------------------------------------------
-# Register domain modules here:
-#
-#   from domains.orders import domain as orders_domain
-#   from domains.users  import domain as users_domain
-#
-#   app = create_app(settings=settings, domains=[orders_domain, users_domain])
-#
-# Each module must expose make_router() and async bootstrap(settings) -> Any.
-# See CLAUDE.md for the full domain pattern.
-# ---------------------------------------------------------------------------
-from domains.example import domain as example_domain
-
+# Domain modules are listed in services/api/domains.py (`make domain DOMAIN=x`
+# adds one). See CLAUDE.md for the domain contract.
 settings = get_settings()
-app = create_app(settings=settings, domains=[example_domain])
+app = create_app(settings=settings, domains=DOMAINS)
 
 
 def main() -> None:

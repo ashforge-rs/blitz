@@ -6,20 +6,16 @@ from loguru import logger
 from opentelemetry import trace
 from returns.result import Failure, Result, Success
 
-from audit.backend import (
-    AuditBackend,
-    AuditEvent,
-    AuditEventType,
-    AuditIntegrity,
-    AuditResult,
-    AuditSeverity,
-)
+from audit.backend import AuditBackend, AuditIntegrity, AuditResult
+from audit.helpers import log_operation
 from service import Service
 
 from .errors import ItemError, ItemErrorCode
 from .models import CreateItemRequest, Item, UpdateItemRequest
 
 if TYPE_CHECKING:
+    from opentelemetry.trace import Span
+
     from context import RequestContext
 
     from .repository import ItemRepository
@@ -31,33 +27,20 @@ class ItemService(Service):
     """
     Business logic for the *items* bounded context.
 
-    Return contract (TigerBeetle / Result monad)
-    ---------------------------------------------
-    Every method returns ``Result[T, ItemError]`` — never raises for domain
-    errors, never returns bare ``None``.  The ``Ok`` / ``Err`` variants are
-    explicit at the call site; callers must handle both branches.
-
-    ``as_result(Exception)`` converts unexpected storage/IO exceptions into
-    ``Failure(ItemError(STORAGE_ERROR, …))`` so nothing escapes as an unhandled
-    exception from the service layer.
+    Return contract
+    ---------------
+    Every method returns ``Result[T, ItemError]`` — domain errors are values,
+    never exceptions.  Storage exceptions are caught at the repository boundary
+    and converted to ``Failure(ItemError(STORAGE_ERROR, …))`` by
+    :meth:`_storage_failure`, which also records them on the span, logs them and
+    (for writes) emits a FAILURE audit event.
 
     SOC 2 compliance surface
     ------------------------
-    CC6  — Logical Access Controls:
-        ``created_by`` / ``updated_by`` provenance recorded from the
-        authenticated principal in ``ctx``.
-
-    CC7  — System Operations & Monitoring:
-        Each method opens an OpenTelemetry span; exceptions are recorded and
-        the span is marked ERROR so OTLP backends surface anomalies.
-
-    CC8  — Change Management:
-        Every state-changing operation emits a structured
-        :class:`~audit.backend.AuditEvent` — including failures.
-
-    CC9  — Risk Mitigation:
-        Storage failures are converted to ``Err`` and a FAILURE audit event
-        is emitted; nothing is silently swallowed.
+    CC6 — ``created_by`` / ``updated_by`` provenance from the principal in ``ctx``.
+    CC7 — every method opens an OpenTelemetry span; failures mark it ERROR.
+    CC8 — every state-changing operation emits an audit event, including failures.
+    CC9 — storage failures become ``Failure`` values; nothing is silently swallowed.
     """
 
     def __init__(
@@ -80,31 +63,52 @@ class ItemService(Service):
     async def _emit(
         self,
         ctx: RequestContext,
-        *,
         operation: str,
-        result: AuditResult,
+        *,
+        result: AuditResult = AuditResult.SUCCESS,
         item_id: str | None = None,
         extra: dict[str, object] | None = None,
     ) -> None:
-        metadata: dict[str, object] = {"operation": operation}
-        if item_id:
-            metadata["item_id"] = item_id
-        if extra:
-            metadata.update(extra)
-
-        event = AuditEvent(
-            event_type=AuditEventType.ADMIN_ACTION,
-            severity=AuditSeverity.WARNING if result != AuditResult.SUCCESS else AuditSeverity.INFO,
+        await log_operation(
+            self._audit,
+            self._integrity,
+            ctx,
+            operation,
             result=result,
-            principal=self._principal(ctx),
-            remote_addr=ctx.remote_addr,
-            correlation_id=ctx.request_id,
-            method=operation,
-            path=ctx.path,
-            metadata=metadata,
+            resource_id=item_id,
+            extra_metadata=extra,
         )
-        self._integrity.add_integrity(event)
-        await self._audit.log(event)
+
+    async def _storage_failure(
+        self,
+        exc: Exception,
+        ctx: RequestContext,
+        span: Span,
+        operation: str,
+        *,
+        item_id: str | None = None,
+        audit: bool = True,
+        extra: dict[str, object] | None = None,
+    ) -> Failure[ItemError]:
+        """Record a storage exception everywhere it must go; return the Failure."""
+        span.record_exception(exc)
+        span.set_status(trace.StatusCode.ERROR, str(exc))
+        logger.error(
+            f"{operation}.error", item_id=item_id, error=str(exc), request_id=ctx.request_id
+        )
+        if audit:
+            await self._emit(
+                ctx,
+                operation,
+                result=AuditResult.FAILURE,
+                item_id=item_id,
+                extra={"error": str(exc), **(extra or {})},
+            )
+        return Failure(ItemError(ItemErrorCode.STORAGE_ERROR, str(exc), item_id))
+
+    @staticmethod
+    def _not_found(item_id: str) -> Failure[ItemError]:
+        return Failure(ItemError(ItemErrorCode.NOT_FOUND, f"{item_id!r} not found", item_id))
 
     # ------------------------------------------------------------------
     # Read operations
@@ -118,20 +122,13 @@ class ItemService(Service):
             try:
                 item = await self._repo.find_by_id(item_id)
             except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
-                span.record_exception(exc)
-                span.set_status(trace.StatusCode.ERROR, str(exc))
-                logger.error("item.get.error", item_id=item_id, error=str(exc))
-                return Failure(ItemError(ItemErrorCode.STORAGE_ERROR, str(exc), item_id))
-
-            if item is None:
-                span.set_attribute("item.found", False)
-                logger.debug("item.get.not_found", item_id=item_id, request_id=ctx.request_id)
-                return Failure(
-                    ItemError(ItemErrorCode.NOT_FOUND, f"{item_id!r} not found", item_id)
+                return await self._storage_failure(
+                    exc, ctx, span, "items.get", item_id=item_id, audit=False
                 )
 
-            span.set_attribute("item.found", True)
-            logger.debug("item.get", item_id=item_id, request_id=ctx.request_id)
+            span.set_attribute("item.found", item is not None)
+            if item is None:
+                return self._not_found(item_id)
             return Success(item)
 
     async def list_all(self, ctx: RequestContext) -> Result[list[Item], ItemError]:
@@ -142,13 +139,9 @@ class ItemService(Service):
             try:
                 items = await self._repo.find_all()
             except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
-                span.record_exception(exc)
-                span.set_status(trace.StatusCode.ERROR, str(exc))
-                logger.error("item.list_all.error", error=str(exc))
-                return Failure(ItemError(ItemErrorCode.STORAGE_ERROR, str(exc)))
+                return await self._storage_failure(exc, ctx, span, "items.list_all", audit=False)
 
             span.set_attribute("items.count", len(items))
-            logger.debug("item.list_all", count=len(items), request_id=ctx.request_id)
             return Success(items)
 
     # ------------------------------------------------------------------
@@ -172,38 +165,14 @@ class ItemService(Service):
             try:
                 saved = await self._repo.save(item)
             except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
-                span.record_exception(exc)
-                span.set_status(trace.StatusCode.ERROR, str(exc))
-                logger.error(
-                    "item.create.error",
-                    name=request.name,
-                    error=str(exc),
-                    request_id=ctx.request_id,
+                return await self._storage_failure(
+                    exc, ctx, span, "items.create", extra={"item_name": request.name}
                 )
-                await self._emit(
-                    ctx,
-                    operation="items.create",
-                    result=AuditResult.FAILURE,
-                    extra={"error": str(exc), "item_name": request.name},
-                )
-                return Failure(ItemError(ItemErrorCode.STORAGE_ERROR, str(exc)))
 
             ctx.set("last_created_item_id", saved.id)
             span.set_attribute("item.id", saved.id)
-            logger.info(
-                "item.created",
-                item_id=saved.id,
-                name=saved.name,
-                principal=self._principal(ctx),
-                request_id=ctx.request_id,
-            )
-            await self._emit(
-                ctx,
-                operation="items.create",
-                result=AuditResult.SUCCESS,
-                item_id=saved.id,
-                extra={"item_name": saved.name},
-            )
+            logger.info("item.created", item_id=saved.id, request_id=ctx.request_id)
+            await self._emit(ctx, "items.create", item_id=saved.id, extra={"item_name": saved.name})
             return Success(saved)
 
     async def update(
@@ -215,68 +184,23 @@ class ItemService(Service):
         ) as span:
             try:
                 item = await self._repo.find_by_id(item_id)
-            except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
-                span.record_exception(exc)
-                span.set_status(trace.StatusCode.ERROR, str(exc))
-                logger.error("item.update.error", item_id=item_id, error=str(exc))
-                await self._emit(
-                    ctx,
-                    operation="items.update",
-                    result=AuditResult.FAILURE,
-                    item_id=item_id,
-                    extra={"error": str(exc)},
-                )
-                return Failure(ItemError(ItemErrorCode.STORAGE_ERROR, str(exc), item_id))
+                if item is None:
+                    span.set_attribute("item.found", False)
+                    return self._not_found(item_id)
 
-            if item is None:
-                span.set_attribute("item.found", False)
-                return Failure(
-                    ItemError(ItemErrorCode.NOT_FOUND, f"{item_id!r} not found", item_id)
+                changes = request.model_dump(exclude_none=True)
+                updated = item.model_copy(
+                    update=changes
+                    | {"updated_at": datetime.now(UTC), "updated_by": self._principal(ctx)}
                 )
-
-            updated = item.model_copy(
-                update={
-                    k: v
-                    for k, v in {
-                        "name": request.name,
-                        "data": request.data,
-                    }.items()
-                    if v is not None
-                }
-                | {
-                    "updated_at": datetime.now(UTC),
-                    "updated_by": self._principal(ctx),
-                }
-            )
-            try:
                 saved = await self._repo.save(updated)
             except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
-                span.record_exception(exc)
-                span.set_status(trace.StatusCode.ERROR, str(exc))
-                logger.error("item.update.save_error", item_id=item_id, error=str(exc))
-                await self._emit(
-                    ctx,
-                    operation="items.update",
-                    result=AuditResult.FAILURE,
-                    item_id=item_id,
-                    extra={"error": str(exc)},
-                )
-                return Failure(ItemError(ItemErrorCode.STORAGE_ERROR, str(exc), item_id))
+                return await self._storage_failure(exc, ctx, span, "items.update", item_id=item_id)
 
             ctx.set("last_updated_item_id", item_id)
             span.set_attribute("item.found", True)
-            logger.info(
-                "item.updated",
-                item_id=item_id,
-                principal=self._principal(ctx),
-                request_id=ctx.request_id,
-            )
-            await self._emit(
-                ctx,
-                operation="items.update",
-                result=AuditResult.SUCCESS,
-                item_id=item_id,
-            )
+            logger.info("item.updated", item_id=item_id, request_id=ctx.request_id)
+            await self._emit(ctx, "items.update", item_id=item_id)
             return Success(saved)
 
     async def delete(self, item_id: str, ctx: RequestContext) -> Result[None, ItemError]:
@@ -287,36 +211,13 @@ class ItemService(Service):
             try:
                 deleted = await self._repo.delete(item_id)
             except Exception as exc:  # noqa: BLE001 — storage boundary: any backend error → STORAGE_ERROR
-                span.record_exception(exc)
-                span.set_status(trace.StatusCode.ERROR, str(exc))
-                logger.error("item.delete.error", item_id=item_id, error=str(exc))
-                await self._emit(
-                    ctx,
-                    operation="items.delete",
-                    result=AuditResult.FAILURE,
-                    item_id=item_id,
-                    extra={"error": str(exc)},
-                )
-                return Failure(ItemError(ItemErrorCode.STORAGE_ERROR, str(exc), item_id))
+                return await self._storage_failure(exc, ctx, span, "items.delete", item_id=item_id)
 
             span.set_attribute("item.deleted", deleted)
             if not deleted:
-                logger.debug("item.delete.not_found", item_id=item_id, request_id=ctx.request_id)
-                return Failure(
-                    ItemError(ItemErrorCode.NOT_FOUND, f"{item_id!r} not found", item_id)
-                )
+                return self._not_found(item_id)
 
             ctx.set("last_deleted_item_id", item_id)
-            logger.info(
-                "item.deleted",
-                item_id=item_id,
-                principal=self._principal(ctx),
-                request_id=ctx.request_id,
-            )
-            await self._emit(
-                ctx,
-                operation="items.delete",
-                result=AuditResult.SUCCESS,
-                item_id=item_id,
-            )
+            logger.info("item.deleted", item_id=item_id, request_id=ctx.request_id)
+            await self._emit(ctx, "items.delete", item_id=item_id)
             return Success(None)

@@ -116,8 +116,14 @@ ignore = [
 "src/routes/**" = ["TC"]
 "src/errors/handlers.py" = ["TC"]
 "src/auth/dependency.py" = ["TC"]
-# Commented-out registration examples are intentional documentation.
-"src/services/*/main.py" = ["ERA001"]
+"src/deps.py" = ["TC"]
+"src/routing.py" = ["TC"]
+# Domain routes: FastAPI resolves Annotated[..., Depends] params and ResultRouter
+# reads `-> Result[T, E]` return annotations at runtime.
+"src/domains/*/domain.py" = ["TC"]
+"src/domains/*/dependencies.py" = ["TC"]
+# Code templates: line length is only known after substitution (ruff formats the output).
+"scripts/new_domain.py" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = [

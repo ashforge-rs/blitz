@@ -5,7 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from app import create_app
 from audit.backends.noop import NoopAuditBackend
 from config import Settings
-from domains.example import domain as example_domain
+from services.api.domains import DOMAINS
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def app(test_settings):
     return create_app(
         settings=test_settings,
         audit_backend=NoopAuditBackend(),
-        domains=[example_domain],
+        domains=DOMAINS,
     )
 
 
