@@ -54,7 +54,11 @@ def validate_domain_module(module: types.ModuleType) -> None:
     name = module.__name__
     present = [hook for hook in HOOKS if hasattr(module, hook)]
     if not present:
-        msg = f"domain module {name!r} exposes none of {', '.join(HOOKS)}"
+        msg = (
+            f"domain module {name!r} exposes none of {', '.join(HOOKS)} — "
+            "pass the domain.py module itself, e.g. `from domains.orders import domain` "
+            "(AGENTS.md, Domains)"
+        )
         raise TypeError(msg)
 
     for hook in present:
@@ -65,7 +69,7 @@ def validate_domain_module(module: types.ModuleType) -> None:
     bootstrap = getattr(module, "bootstrap", None)
     if bootstrap is not None:
         if not inspect.iscoroutinefunction(bootstrap):
-            msg = f"{name}.bootstrap must be an async function"
+            msg = f"{name}.bootstrap must be `async def bootstrap(boot: BootstrapContext)`"
             raise TypeError(msg)
         # FORWARDREF: don't evaluate annotations (they are often TYPE_CHECKING-only).
         signature = inspect.signature(bootstrap, annotation_format=Format.FORWARDREF)
@@ -78,6 +82,7 @@ def validate_domain_module(module: types.ModuleType) -> None:
         if len(positional) != 1:
             msg = (
                 f"{name}.bootstrap must take exactly one argument (boot: BootstrapContext), "
-                f"got ({', '.join(p.name for p in params)})"
+                f"got ({', '.join(p.name for p in params)}); read settings and audit "
+                "objects from boot.settings / boot.audit_backend / boot.audit_integrity"
             )
             raise TypeError(msg)

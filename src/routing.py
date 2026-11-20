@@ -27,6 +27,26 @@ from returns.result import Failure, Result, Success
 from errors.domain import DomainError, DomainFailure
 
 
+def runtime_signature(endpoint: Callable[..., Any]) -> inspect.Signature:
+    """``inspect.signature(endpoint)`` with every annotation evaluated.
+
+    FastAPI needs real objects for parameter and return annotations.  A name
+    imported only under ``if TYPE_CHECKING:`` is undefined at runtime; FastAPI
+    would then silently treat a body model as a required query parameter.
+    Raise instead, with the fix in the message.
+    """
+    try:
+        return inspect.signature(endpoint)
+    except NameError as exc:
+        where = f"{endpoint.__module__}.{endpoint.__qualname__}"
+        msg = (
+            f"{where}: annotation {exc.name!r} is not defined at runtime. FastAPI reads route "
+            f"and dependency annotations when the app starts, so import {exc.name!r} at module "
+            "level, not under `if TYPE_CHECKING:` (AGENTS.md, Gotchas #2)."
+        )
+        raise NameError(msg, name=exc.name) from exc
+
+
 def _unwrap(rv: Any) -> Any:
     match rv:
         case Success(value):
@@ -62,7 +82,7 @@ def unwrap_result(endpoint: Callable[..., Any]) -> Callable[..., Any]:
     # FastAPI resolves dependencies from the signature, so keep the original
     # parameters.  Drop a ``Result[...]`` return annotation: FastAPI would try to
     # build a response model from it (ResultRouter derives the real one instead).
-    signature = inspect.signature(endpoint)
+    signature = runtime_signature(endpoint)
     if _result_args(endpoint) is not None:
         signature = signature.replace(return_annotation=inspect.Signature.empty)
     wrapper.__signature__ = signature  # type: ignore[attr-defined]
@@ -71,10 +91,7 @@ def unwrap_result(endpoint: Callable[..., Any]) -> Callable[..., Any]:
 
 def _result_args(endpoint: Callable[..., Any]) -> tuple[Any, ...] | None:
     """``(T, E)`` for an endpoint annotated ``-> Result[T, E]``, else ``None``."""
-    try:
-        annotation = inspect.signature(endpoint).return_annotation
-    except NameError:  # annotation refers to a TYPE_CHECKING-only name
-        return None
+    annotation = runtime_signature(endpoint).return_annotation
     if typing.get_origin(annotation) is Result:
         return typing.get_args(annotation)
     return None

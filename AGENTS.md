@@ -96,7 +96,8 @@ These are the mistakes agents make most often here:
    `dependencies.py`, `routes/`, `deps.py`), names used in route/dependency signatures and
    `-> Result[...]` return types must be imported at module level, not under `if TYPE_CHECKING:`.
    Otherwise FastAPI silently treats a body model as a required query parameter (every request
-   gets a 422). `create_app()` refuses to start when it finds one. Ruff's `TC` rules are disabled
+   gets a 422). `create_app()` refuses to start when a domain route has one, and `ResultRouter`
+   raises at the decorator; both errors name the annotation and the fix. Ruff's `TC` rules are disabled
    for those files so `--fix` won't move such imports. Everywhere else, typing-only imports
    *do* go under `TYPE_CHECKING` (Ruff enforces it).
 3. **Services return `Failure(...)`; they don't raise** for not-found, conflict, or storage errors.

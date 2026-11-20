@@ -90,7 +90,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-"__future__.annotations".msg = "Redundant on Python 3.14+ — annotations are evaluated lazily (PEP 649)."
+"__future__.annotations".msg = "Redundant on Python 3.14+ — annotations are evaluated lazily (PEP 649). See AGENTS.md, Gotchas."
 
 [tool.ruff.lint.per-file-ignores]
 # Tests: no annotation requirements, allow commented examples, allow broad raises, allow assert
