@@ -27,6 +27,21 @@ SOC 2 (System and Organization Controls 2) is an auditing standard developed by 
 
 ---
 
+## Where blitz already addresses controls
+
+Start from these; they are the reference patterns, and gaps usually mean a domain didn't follow them.
+
+| Criterion | Implementation |
+| --- | --- |
+| CC6 access & provenance | `auth/` (`AuthProvider`, `get_auth_context`); `created_by` / `updated_by` set from the ctx principal (`src/domains/example/service.py`) |
+| CC7 monitoring | OpenTelemetry spans per service method (`src/domains/example/service.py`), `telemetry/`, Prometheus `/metrics`, per-request audit middleware (`src/middleware/audit.py`) |
+| CC8 change management | every write emits an audit event, failures included (`audit.helpers.log_operation`); tamper evidence via `audit/integrity.py` |
+| CC9 risk mitigation | storage failures become `Failure` values, never swallowed; 5xx details are logged, not returned (`src/errors/domain.py`, `src/errors/handlers.py`) |
+| A availability | `/live`, `/health` checks, graceful drain + `aclose()` on shutdown (`src/lifespan.py`), rate limiting, request timeouts and size limits (`src/middleware/`) |
+| C confidentiality | `SecretStr` settings (`src/config.py`), security headers (`src/middleware/security.py`) |
+
+---
+
 ## Evaluation Framework
 
 Work through each category below. For each area:

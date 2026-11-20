@@ -27,20 +27,10 @@ class ItemService(Service):
     """
     Business logic for the *items* bounded context.
 
-    Return contract
-    ---------------
-    Every method returns ``Result[T, ItemError]`` — domain errors are values,
-    never exceptions.  Storage exceptions are caught at the repository boundary
-    and converted to ``Failure(ItemError(STORAGE_ERROR, …))`` by
-    :meth:`_storage_failure`, which also records them on the span, logs them and
-    (for writes) emits a FAILURE audit event.
-
-    SOC 2 compliance surface
-    ------------------------
-    CC6 — ``created_by`` / ``updated_by`` provenance from the principal in ``ctx``.
-    CC7 — every method opens an OpenTelemetry span; failures mark it ERROR.
-    CC8 — every state-changing operation emits an audit event, including failures.
-    CC9 — storage failures become ``Failure`` values; nothing is silently swallowed.
+    Every method returns ``Result[T, ItemError]`` and opens an OpenTelemetry
+    span.  Storage exceptions are caught at the repository call and converted by
+    :meth:`_storage_failure`, which records them on the span, logs them and (for
+    writes) emits a FAILURE audit event.  Successful writes are audited too.
     """
 
     def __init__(
@@ -145,7 +135,7 @@ class ItemService(Service):
             return Success(items)
 
     # ------------------------------------------------------------------
-    # Write operations — each emits an audit event (CC8)
+    # Write operations — each emits an audit event
     # ------------------------------------------------------------------
 
     async def create(

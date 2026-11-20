@@ -5,13 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class Item(BaseModel):
-    """
-    Persisted item representation.
-
-    SOC 2 CC6/CC8: Every record carries a full provenance trail — who created
-    it, who last modified it, and when — so that access and change events can be
-    reconstructed during an audit.
-    """
+    """Persisted item, with who/when provenance for every create and update."""
 
     id: str
     name: str
