@@ -37,4 +37,4 @@ class MyAuditBackend(AuditBackend):
 ### After implementation
 1. Update `src/audit/backends/__init__.py` to export the new class
 2. Write at least one test using a mock of the external dependency
-3. Run `uv run ruff check --fix src/ tests/ && uv run ruff format src/ tests/`
+3. Run `make fmt && make verify` — `make verify` must exit 0

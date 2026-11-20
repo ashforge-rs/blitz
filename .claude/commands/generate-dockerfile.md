@@ -1,6 +1,11 @@
-Generate an optimal multi-stage Dockerfile for this blitz application.
+Generate an optimal multi-stage Dockerfile for one blitz service.
 
 Arguments: $ARGUMENTS
+
+The argument is the service name (default `api`). Each service owns its image at
+`src/services/<service>/Dockerfile`; CI, `make docker-build SERVICE=<service>` and
+`docker-compose.yml` all build from that path with the repo root as build context. There is
+no root Dockerfile.
 
 ## Instructions
 
@@ -17,7 +22,9 @@ Gather context from the project before writing the Dockerfile:
    - Default `PORT` (check for a PORT setting; fall back to 8000)
    - Default `WORKERS` setting value
 
-3. Read `src/services/api/main.py` to confirm the uvicorn entry point (`module:app` string).
+3. Read `src/services/<service>/main.py` to confirm the uvicorn entry point
+   (`services.<service>.main:app`). If an image already exists for another service
+   (e.g. `src/services/api/Dockerfile`), keep the new one consistent with it.
 
 4. Check whether a `.dockerignore` exists; if not, create one (see below).
 
@@ -65,7 +72,7 @@ FROM python:3.XX-slim AS runtime
 - Add a `HEALTHCHECK` using `/live` endpoint
 - Use `CMD` with `uvicorn` directly (not the `main()` entrypoint) so Docker signals are handled correctly:
   ```
-  CMD ["uvicorn", "services.api.main:app", "--host", "0.0.0.0", "--port", "8000",
+  CMD ["uvicorn", "services.<service>.main:app", "--host", "0.0.0.0", "--port", "8000",
        "--loop", "uvloop", "--http", "httptools", "--no-access-log"]
   ```
   Do NOT hardcode `--workers` — let it be set via `WEB_CONCURRENCY` env var or the `WORKERS` setting.
@@ -111,11 +118,13 @@ tests/
 
 ### Output
 
-Write the Dockerfile to the repo root. If a Dockerfile already exists, show a diff of proposed changes and ask before overwriting.
+Write the Dockerfile to `src/services/<service>/Dockerfile`. If it already exists, show a diff of
+proposed changes and ask before overwriting. `.dockerignore` stays at the repo root (shared by
+every service).
 
 After writing:
 
-1. Run `docker build --no-cache -t <name>:dev .` if docker is available, to validate the build.
+1. Run `make docker-build SERVICE=<service>` if docker is available, to validate the build.
 2. Print a summary table of image optimisation choices made.
 
 ## Conventions

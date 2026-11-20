@@ -39,4 +39,4 @@ my_histogram.labels(operation="db_query").observe(elapsed_seconds)
 ### After implementation
 - Verify the metric appears in `GET /metrics` by starting the dev server (`make dev`) and checking `curl http://localhost:8000/metrics | grep <metric_name>`
 - Write a test that calls the instrumented code path and checks the counter value via `prometheus_client.REGISTRY`
-- Run `uv run ruff check --fix src/ tests/ && uv run ruff format src/ tests/`
+- Run `make fmt && make verify` — `make verify` must exit 0
