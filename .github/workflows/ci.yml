@@ -70,10 +70,10 @@ jobs:
         run: uv sync --frozen # fails if uv.lock is out of date
 
       - name: Ruff format check
-        run: uv run ruff format --check src/ tests/
+        run: uv run ruff format --check src/ tests/ scripts/
 
       - name: Ruff lint
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check src/ tests/ scripts/
 
       - name: mypy
         run: uv run mypy src/

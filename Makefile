@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev domain lint fmt check test test-unit test-integration test-fuzz coverage openapi docker-build docker-push docker-run clean
+.PHONY: help install dev domain verify lint fmt check test test-unit test-integration test-fuzz coverage openapi docker-build docker-push docker-run clean
 
 # ── Multi-service layout ──────────────────────────────────────────────────────
 # Each service lives under src/services/<name>/ (main.py + Dockerfile) and
@@ -12,6 +12,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 SERVICE ?= api
+PY_DIRS := src/ tests/ scripts/
 PORT    ?= 8000
 IMAGE   ?= ghcr.io/$(shell git config --get remote.origin.url | sed 's/.*github.com[:/]//' | sed 's/\.git$$//' | tr '[:upper:]' '[:lower:]')-$(SERVICE)
 
@@ -29,13 +30,19 @@ domain: ## Scaffold a domain + tests and register it (DOMAIN=orders [ENTITY=Orde
 		(echo "usage: make domain DOMAIN=<snake_case> [ENTITY=<PascalCase>] [SERVICE=api]" && exit 1)
 	uv run python scripts/new_domain.py $(DOMAIN) --service $(SERVICE) $(if $(ENTITY),--entity $(ENTITY))
 
+verify: ## Check everything without changing files: format, lint, types, tests
+	uv run ruff format --check $(PY_DIRS)
+	uv run ruff check $(PY_DIRS)
+	uv run mypy src/
+	uv run pytest
+
 lint: ## Run the Ruff linter
-	uv run ruff check src/ tests/
+	uv run ruff check $(PY_DIRS)
 
 fmt: ## Auto-format with Ruff
-	uv run ruff format src/ tests/
+	uv run ruff format $(PY_DIRS)
 
-check: fmt lint ## Format, lint, then mypy type-check
+check: fmt lint ## Format + lint (rewrites files), then mypy type-check
 	uv run mypy src/
 
 test: ## Run the whole test suite
