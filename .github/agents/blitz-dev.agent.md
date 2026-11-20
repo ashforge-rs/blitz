@@ -126,11 +126,13 @@ Obtain it in routes via `RequestContextDep` from the shared `deps` module.
 | Integration | `tests/domains/{domain}/integration/` (+ `tests/global/integration/`) | httpx + `LifespanManager`  |
 | Fuzz        | `tests/domains/{domain}/fuzz/`                                        | Hypothesis `@given`        |
 
-The `client` fixture (from `tests/conftest.py`) wraps the app in
-`LifespanManager` (from `asgi-lifespan`, already a dev dep) so domain
-`bootstrap()` runs before any request. **Integration tests that create their own
-`AsyncClient` must also use `LifespanManager` — without it `app.state.domains`
-is empty and every `Depends` call will raise `KeyError`.**
+The `client` fixture (from `tests/conftest.py`) serves every domain listed in
+`src/services/api/domains.py` and wraps the app in `LifespanManager` so domain
+`bootstrap()` runs before any request. For a custom app, use
+`make_app(settings={...}, **create_app_kwargs)` and
+`async with make_client(app) as c:` — `make_client` runs the lifespan too.
+**A hand-built `AsyncClient` without `LifespanManager` leaves domains
+unbootstrapped, and every domain dependency raises `LookupError`.**
 
 Fuzz tests live under each domain package (`tests/domains/{domain}/fuzz/`),
 typically `test_fuzz.py` within that folder.

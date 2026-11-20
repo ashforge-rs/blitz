@@ -13,8 +13,8 @@ app = create_app(settings=settings, domains=DOMAINS)
 def main() -> None:
     uvicorn.run(
         "services.api.main:app",
-        host="0.0.0.0",  # noqa: S104 — container entry point; bind all interfaces
-        port=8000,
+        host=settings.HOST,
+        port=settings.PORT,
         workers=settings.WORKERS,
         loop="uvloop",
         http="httptools",

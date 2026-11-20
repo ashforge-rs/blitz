@@ -344,6 +344,7 @@ See `.env.example` for all options. Key variables:
 | `ENVIRONMENT`              | `development` | `development` / `production` / `test` |
 | `LOG_LEVEL`                | `INFO`        | Loguru log level                      |
 | `WORKERS`                  | `1`           | Uvicorn worker processes              |
+| `HOST` / `PORT`            | `127.0.0.1` / `8000` | Bind address for `python -m services.api.main` |
 | `MAX_REQUEST_SIZE_BYTES`   | `10485760`    | 10 MB body limit                      |
 | `REQUEST_TIMEOUT_SECONDS`  | `30.0`        | Per-request timeout                   |
 | `RATE_LIMIT`               | `100/minute`  | Rate limit per IP                     |
@@ -373,3 +374,6 @@ comma-separated (`a,b`) or JSON (`["a","b"]`) values.
 - Secret settings are typed `SecretStr` (masked in repr/logs/dumps); unwrap with `.get_secret_value()` only where used
 - In `production` environment: Loguru emits JSON, `/docs` is disabled, unhandled exceptions return sanitised `500` responses
 - Middleware execution order (outermost → innermost): TrustedHost → CORS → InFlight → Audit → SecurityHeaders → Timeout → SizeLimit → RateLimit → Context → Handler
+- Every `Settings` field must appear in `.env.example` (a test enforces it)
+- Tests: `client` serves every registered domain; for a custom app use the `make_app(settings={...}, **create_app_kwargs)`
+  and `async with make_client(app) as c:` fixtures (lifespan runs, a local `.env` is never read)

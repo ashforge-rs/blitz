@@ -51,7 +51,7 @@ src/
       main.py     # create_app() call + uvicorn entry point
       Dockerfile  # Per-service container image
 tests/
-  conftest.py     # Global fixtures (test_settings, app, client)
+  conftest.py     # Global fixtures (make_settings, make_app, make_client, app, client)
   global/         # Framework-level tests (no domain dependency)
     unit/         # InMemoryStore and other infrastructure unit tests
     integration/  # App-wide integration tests (middleware, auth, errors)
@@ -91,6 +91,7 @@ All settings are read from environment variables or a `.env` file. See `.env.exa
 | `ENVIRONMENT`              | `development` | `development` / `production` / `test`               |
 | `LOG_LEVEL`                | `INFO`        | Loguru log level                                    |
 | `WORKERS`                  | `1`           | Uvicorn worker count                                |
+| `HOST` / `PORT`            | `127.0.0.1` / `8000` | Bind address for `python -m services.api.main` |
 | `RATE_LIMIT`               | `100/minute`  | Per-IP sliding window limit                         |
 | `REQUEST_TIMEOUT_SECONDS`  | `30.0`        | Per-request hard timeout                            |
 | `MAX_REQUEST_SIZE_BYTES`   | `10485760`    | 10 MB body limit                                    |

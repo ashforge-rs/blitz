@@ -1,11 +1,7 @@
 from asgi_lifespan import LifespanManager
 from fastapi import Depends, Request
-from httpx import ASGITransport, AsyncClient
 
-from app import create_app
-from audit.backends.noop import NoopAuditBackend
 from auth.dependency import get_auth_context
-from config import Settings
 from context import RequestContext
 
 # ---------------------------------------------------------------------------
@@ -25,16 +21,11 @@ async def test_health_no_checks(client):
     assert r.json()["status"] == "ok"
 
 
-async def test_health_failing_check(test_settings):
+async def test_health_failing_check(make_app, make_client):
     async def bad_check():
         return {"name": "db", "healthy": False}
 
-    app = create_app(
-        settings=test_settings,
-        audit_backend=NoopAuditBackend(),
-        health_checks=[bad_check],
-    )
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with make_client(make_app(health_checks=[bad_check])) as c:
         r = await c.get("/health")
     assert r.status_code == 503
     assert r.json()["status"] == "degraded"
@@ -84,15 +75,8 @@ async def test_security_headers(client):
 # ---------------------------------------------------------------------------
 
 
-async def test_rate_limit_exceeded(test_settings):
-    settings = Settings(
-        **{
-            **test_settings.model_dump(),
-            "RATE_LIMIT": "1/minute",
-        }
-    )
-    app = create_app(settings=settings, audit_backend=NoopAuditBackend())
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+async def test_rate_limit_exceeded(make_app, make_client):
+    async with make_client(make_app(settings={"RATE_LIMIT": "1/minute"})) as c:
         # Use /metrics (not an exempt path) so the limiter is exercised
         r1 = await c.get("/metrics")
         r2 = await c.get("/metrics")
@@ -107,10 +91,8 @@ async def test_rate_limit_exceeded(test_settings):
 # ---------------------------------------------------------------------------
 
 
-async def test_size_limit_content_length(test_settings):
-    settings = Settings(**{**test_settings.model_dump(), "MAX_REQUEST_SIZE_BYTES": 10})
-    app = create_app(settings=settings, audit_backend=NoopAuditBackend())
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+async def test_size_limit_content_length(make_app, make_client):
+    async with make_client(make_app(settings={"MAX_REQUEST_SIZE_BYTES": 10})) as c:
         r = await c.post("/live", content=b"x" * 100)
     assert r.status_code == 413
 
@@ -120,9 +102,8 @@ async def test_size_limit_content_length(test_settings):
 # ---------------------------------------------------------------------------
 
 
-async def test_unhandled_exception_prod(test_settings):
-    prod_settings = Settings(**{**test_settings.model_dump(), "ENVIRONMENT": "production"})
-    boom_app = create_app(settings=prod_settings, audit_backend=NoopAuditBackend())
+async def test_unhandled_exception_prod(make_app, make_client):
+    boom_app = make_app(settings={"ENVIRONMENT": "production"})
 
     @boom_app.get("/boom")
     async def boom():
@@ -131,10 +112,7 @@ async def test_unhandled_exception_prod(test_settings):
     # Starlette 0.42+ re-raises the exception after calling the error handler so
     # that test cases can optionally observe it.  We don't want that here — we only
     # care that the HTTP response body is sanitised.
-    async with AsyncClient(
-        transport=ASGITransport(app=boom_app, raise_app_exceptions=False),
-        base_url="http://test",
-    ) as c:
+    async with make_client(boom_app, raise_app_exceptions=False) as c:
         r = await c.get("/boom")
     assert r.status_code == 500
     body = r.json()
@@ -143,18 +121,14 @@ async def test_unhandled_exception_prod(test_settings):
     assert "RuntimeError" not in r.text
 
 
-async def test_unhandled_exception_dev(test_settings):
-    dev_settings = Settings(**{**test_settings.model_dump(), "ENVIRONMENT": "development"})
-    boom_app = create_app(settings=dev_settings, audit_backend=NoopAuditBackend())
+async def test_unhandled_exception_dev(make_app, make_client):
+    boom_app = make_app(settings={"ENVIRONMENT": "development"})
 
     @boom_app.get("/boom")
     async def boom():
         raise RuntimeError("something went wrong")
 
-    async with AsyncClient(
-        transport=ASGITransport(app=boom_app, raise_app_exceptions=False),
-        base_url="http://test",
-    ) as c:
+    async with make_client(boom_app, raise_app_exceptions=False) as c:
         r = await c.get("/boom")
     assert r.status_code == 500
     body = r.json()
@@ -191,8 +165,8 @@ class _NoCredentials:
         return True
 
 
-def _make_auth_app(settings, auth_provider):
-    a = create_app(settings=settings, audit_backend=NoopAuditBackend(), auth_provider=auth_provider)
+def _make_auth_app(make_app, auth_provider):
+    a = make_app(auth_provider=auth_provider)
 
     @a.get("/protected")
     async def protected(principal=Depends(get_auth_context)):  # noqa: B008
@@ -201,23 +175,20 @@ def _make_auth_app(settings, auth_provider):
     return a
 
 
-async def test_auth_allow(test_settings):
-    app = _make_auth_app(test_settings, _AlwaysAllow())
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+async def test_auth_allow(make_app, make_client):
+    async with make_client(_make_auth_app(make_app, _AlwaysAllow())) as c:
         r = await c.get("/protected")
     assert r.status_code == 200
 
 
-async def test_auth_forbidden(test_settings):
-    app = _make_auth_app(test_settings, _AlwaysDeny())
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+async def test_auth_forbidden(make_app, make_client):
+    async with make_client(_make_auth_app(make_app, _AlwaysDeny())) as c:
         r = await c.get("/protected")
     assert r.status_code == 403
 
 
-async def test_auth_unauthorized(test_settings):
-    app = _make_auth_app(test_settings, _NoCredentials())
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+async def test_auth_unauthorized(make_app, make_client):
+    async with make_client(_make_auth_app(make_app, _NoCredentials())) as c:
         r = await c.get("/protected")
     assert r.status_code == 401
 
@@ -227,7 +198,7 @@ async def test_auth_unauthorized(test_settings):
 # ---------------------------------------------------------------------------
 
 
-async def test_audit_event_dispatched(test_settings):
+async def test_audit_event_dispatched(make_app, make_client):
     events = []
 
     from audit.backend import AuditBackend, AuditEvent
@@ -236,8 +207,7 @@ async def test_audit_event_dispatched(test_settings):
         async def log(self, event: AuditEvent) -> None:
             events.append(event)
 
-    app = create_app(settings=test_settings, audit_backend=_Collector())
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with make_client(make_app(audit_backend=_Collector())) as c:
         await c.get("/live")
 
     assert len(events) == 1
@@ -293,13 +263,9 @@ async def test_domain_routes_mounted_under_api_prefix(client):
     assert (await client.get("/live")).status_code == 200  # operational routes unprefixed
 
 
-async def test_api_prefix_disabled(test_settings):
+async def test_api_prefix_disabled(make_app, make_client):
     from domains.example import domain as example_domain
 
-    settings = Settings(**{**test_settings.model_dump(), "API_PREFIX": ""})
-    app = create_app(settings=settings, audit_backend=NoopAuditBackend(), domains=[example_domain])
-    async with (
-        LifespanManager(app),
-        AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c,
-    ):
+    app = make_app(settings={"API_PREFIX": ""}, domains=[example_domain])
+    async with make_client(app) as c:
         assert (await c.get("/example/")).status_code == 200
