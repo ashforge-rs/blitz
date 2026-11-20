@@ -45,27 +45,11 @@ dev = [
 required-version = "~=0.13.7"
 
 [tool.hatch.build.targets.wheel]
-sources = { "src" = "" }
-packages = [
-  "src/app.py",
-  "src/config.py",
-  "src/context.py",
-  "src/lifespan.py",
-  "src/main.py",
-  "src/service.py",
-  "src/state.py",
-  "src/auth",
-  "src/audit",
-  "src/errors",
-  "src/log",
-  "src/metrics",
-  "src/middleware",
-  "src/routes",
-  "src/store",
-  "src/telemetry",
-  "src/domains",
-  "src/services",
-]
+# Ship everything under src/ as top-level modules (src/config.py → config).
+# No per-module list to keep in sync when a module is added.
+only-include = ["src"]
+sources = ["src"]
+exclude = ["**/Dockerfile"]
 
 [tool.ruff]
 src = ["src"]
@@ -125,27 +109,6 @@ ignore = [
 # Code templates: line length is only known after substitution (ruff formats the output).
 "scripts/new_domain.py" = ["E501"]
 
-[tool.ruff.lint.isort]
-known-first-party = [
-  "app",
-  "config",
-  "context",
-  "auth",
-  "audit",
-  "errors",
-  "log",
-  "metrics",
-  "middleware",
-  "routes",
-  "service",
-  "state",
-  "lifespan",
-  "store",
-  "telemetry",
-  "domains",
-  "services",
-]
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -161,7 +124,7 @@ filterwarnings = ["error"]
 [tool.coverage.run]
 source = ["src"]
 # Process entry points (uvicorn bootstrap) — exercised by `make dev`, not tests.
-omit = ["src/main.py", "src/services/*/main.py"]
+omit = ["src/services/*/main.py"]
 branch = true
 
 [tool.coverage.report]

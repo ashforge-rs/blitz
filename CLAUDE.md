@@ -38,7 +38,6 @@ make dev          # http://localhost:8000
 ```
 src/
 ├── app.py              # create_app() factory — main entry point for customisation
-├── main.py             # Backward-compat shim; re-exports from services/api/main.py
 ├── config.py           # Settings (pydantic-settings, loads .env)
 ├── context.py          # RequestContext dataclass + ContextVar helpers
 ├── lifespan.py         # Startup / graceful-shutdown lifecycle (domain bootstrap + aclose)
