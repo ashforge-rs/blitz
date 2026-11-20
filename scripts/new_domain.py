@@ -564,7 +564,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  registered in src/services/{args.service}/domains.py")
 
     tidy(created)
-    print(f"\nNext: `make check && make test`; routes are served at /v1/{values['route']}")
+    print(f"\nNext: customise, then `make verify`; routes are served at /v1/{values['route']}")
     return 0
 
 

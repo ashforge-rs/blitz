@@ -47,17 +47,10 @@ Adapt the generated code to what the user described:
   Settings and extra resources are on `boot.settings` / `boot.extra`.
 - **Tests** — extend all three tiers to cover the new fields, rules and error codes.
 
+The rules the result must follow are in `AGENTS.md` (domain table, contract, gotchas).
 `src/domains/example/` is the fuller reference (OpenTelemetry spans, audit metadata).
 
 ## 3. Verify
 
-1. `make check` — ruff + mypy must be clean
-2. `make test` — existing tests still pass, plus the new ones
-3. The routes appear under `/v1/<name-with-dashes>` in `/docs` (`make dev`)
-
-## Conventions
-
-- No `from __future__ import annotations` — Python 3.14+ evaluates annotations lazily (PEP 649)
-- Line length: 100 characters
-- Ruff only — no bare `except:`, always name the exception type
-- All imports inside the domain package are relative (`from .models import ...`)
+1. `make verify` — format, lint, mypy and every test (old and new) must pass
+2. The routes appear under `/v1/<name-with-dashes>` in `/docs` (`make dev`)

@@ -11,7 +11,9 @@ metadata:
   version: "1.0"
 ---
 
-Perform a thorough, evidence-based code review of the target scope.
+Perform a thorough, evidence-based code review of the target scope. The rules being
+enforced are defined in `AGENTS.md` (domain table, contract, gotchas, conventions); this skill
+is the procedure for checking them.
 
 **Input**: Optionally a file path, domain name, or PR diff. If omitted, review
 the full repository.
@@ -22,7 +24,7 @@ the full repository.
 
 Determine what to review:
 - If a specific file or domain was named, read it and its tests.
-- If reviewing a PR / recent changes, use `git diff main...HEAD` or
+- If reviewing a PR / recent changes, use `git diff master...HEAD` or
   `git diff --name-only HEAD~1` to identify changed files, then read each.
 - If no scope given, read all files under `src/` and `tests/`.
 
@@ -34,13 +36,10 @@ everything.
 
 ## Step 1 — Run the quality gates
 
-Execute all three checks and capture full output:
+Run the gate and capture full output:
 
 ```bash
-uv run ruff format --check src/ tests/
-uv run ruff check src/ tests/
-uv run mypy src/ tests/
-uv run pytest --tb=short -q
+make verify          # ruff format --check, ruff check, mypy src/, pytest
 ```
 
 Report exact error counts at the top of your findings table. A passing gate is
@@ -55,15 +54,8 @@ For each domain under `src/domains/` (skip `src/domains/example/` unless it is t
 
 ### 2a. Layer separation (SOLID)
 
-| Layer | File | Must contain | Must NOT contain |
-|---|---|---|---|
-| Models | `models.py` | Pydantic fields + validators | Business logic, DB calls, imports from service/repo |
-| Repository | `repository.py` | Async store calls only | Business rules, HTTP context, `InMemoryStore` import |
-| Service | `service.py` | Business rules, `ctx: RequestContext` as last arg | Direct store access, HTTP objects, hardcoded IDs |
-| Domain | `domain.py` | `make_router()`, `bootstrap()`, route handlers | Business logic (must delegate to service) |
-| Dependencies | `dependencies.py` | `Depends` factories only | Logic beyond extracting from `request.app.state` |
-
-Flag any violation as **ARCHITECTURE** severity.
+Check every file against its row in the AGENTS.md domain table ("Holds" / "Never"), and the
+module against the AGENTS.md contract and gotchas. Flag any violation as **ARCHITECTURE** severity.
 
 ### 2b. bootstrap() wiring
 
@@ -151,7 +143,7 @@ Work through each item. Any **YES** triggers a finding.
 
 ## Step 4 — Type safety review
 
-Run `uv run mypy src/ tests/` if not already done.
+`make verify` type-checks `src/`. For test helpers, `uv run mypy tests/` is informative but not gated.
 
 Beyond zero errors, inspect manually:
 
@@ -181,8 +173,8 @@ For each domain, all three test layers must exist:
 | Fuzz (`tests/domains/<name>/fuzz/`) | At least one `@given` test per model; service invariants verified |
 
 ### Test correctness
-- [ ] `AsyncClient` used without `LifespanManager`?
-  (Domain bootstrap never runs → `KeyError` at runtime, not caught by tests)
+- [ ] `AsyncClient` built by hand instead of the `client` / `make_client` fixtures?
+  (Without `LifespanManager`, domain bootstrap never runs → `LookupError` on every domain route)
 - [ ] Tests assert on response status code only, not response body?
 - [ ] Mocks replace real business logic instead of infrastructure?
 - [ ] `@pytest.mark.skip` or `xfail` with no issue reference?
@@ -190,9 +182,8 @@ For each domain, all three test layers must exist:
 - [ ] `dirty-equals` available but plain string comparisons used for IDs/dates?
 
 ### Fixtures
-- [ ] `test_settings` fixture overrides `ENVIRONMENT="test"` and a high `RATE_LIMIT`?
-- [ ] `app` fixture registers all domains under test?
-- [ ] `client` fixture yields inside both `LifespanManager` and `AsyncClient` context managers?
+- [ ] Custom apps built with `make_app(...)` rather than a bare `create_app(...)` (keeps the no-op audit backend and `.env` isolation)?
+- [ ] New domains listed in `src/services/api/domains.py` (so the `client` fixture serves them)?
 
 ---
 

@@ -121,12 +121,21 @@ RFC 9457 Problem Details (`application/problem+json`) with `type`, `title`, `sta
 
 ---
 
+## Working with coding agents
+
+`AGENTS.md` is the single source of project rules for coding agents: commands, layout, the domain
+contract, common mistakes and test fixtures. `CLAUDE.md` imports it, and project skills and commands
+live in `.claude/`. Agents (and people) should finish with `make verify`.
+
+---
+
 ## Development commands
 
 | Command                 | Description                                                |
 | ----------------------- | ---------------------------------------------------------- |
 | `make install`          | Install all dependencies via `uv sync`                     |
 | `make help`             | List every target                                          |
+| `make verify`           | Format check, lint, mypy and tests — changes nothing       |
 | `make dev`              | Start dev server with hot-reload (`SERVICE=api`, `PORT=8000`) |
 | `make domain DOMAIN=x`  | Scaffold a domain + tests and register it                  |
 | `make check`            | Format and lint with Ruff, then type-check with mypy       |
