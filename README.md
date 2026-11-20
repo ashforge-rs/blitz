@@ -170,7 +170,7 @@ Coverage is enforced at 80 % in CI.
 
 ## Deployment
 
-A `Dockerfile` and `docker-compose.yml` are included. A Grafana dashboard with Prometheus data source is pre-configured under `grafana/`.
+Each service ships its own image definition (`src/services/<name>/Dockerfile`), and `docker-compose.yml` runs the `api` service with Prometheus and Grafana. A Grafana dashboard with Prometheus data source is pre-configured under `grafana/`.
 
 Set `ENVIRONMENT=production` to enable:
 
