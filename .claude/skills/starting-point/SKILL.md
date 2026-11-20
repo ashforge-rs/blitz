@@ -200,6 +200,7 @@ Also add an import comment to `src/services/api/main.py` below the existing impo
 
 Remove:
 - `src/domains/example/` (entire directory)
+- the `example_domain` import and list entry in `src/services/api/domains.py`
 - `tests/` files that import from `example` (identify with grep before deleting)
 
 After deletion, remove the `example` scope from `.github/conventional-commits.yml`

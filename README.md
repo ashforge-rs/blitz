@@ -72,15 +72,13 @@ Each feature area follows a four-layer pattern:
 InMemoryStore  ->  Repository  ->  Service  ->  Domain (router + bootstrap)
 ```
 
-Register it in `src/services/api/main.py`:
+Scaffold one, with tests, and register it with the `api` service:
 
-```python
-from domains.orders import domain as orders_domain
-
-app = create_app(settings=settings, domains=[orders_domain])
+```bash
+make domain DOMAIN=orders        # entity: Order; routes at /v1/orders
 ```
 
-`bootstrap(settings)` is called once at startup; `make_router()` is called at application creation. See `src/domains/example/` for a complete working implementation.
+Registered domains are listed in `src/services/api/domains.py`. `make_router()` is called at application creation; `async bootstrap(boot)` is called once at startup and may return an instance with `aclose()` for shutdown. Services return `Result[T, DomainError]`, and `ResultRouter` maps failures to RFC 9457 responses. See `CLAUDE.md` for the contract and `src/domains/example/` for a complete working implementation.
 
 ---
 
@@ -127,7 +125,9 @@ RFC 9457 Problem Details (`application/problem+json`) with `type`, `title`, `sta
 | Command                 | Description                                                |
 | ----------------------- | ---------------------------------------------------------- |
 | `make install`          | Install all dependencies via `uv sync`                     |
-| `make dev`              | Start dev server with hot-reload (`services.api.main:app`) |
+| `make help`             | List every target                                          |
+| `make dev`              | Start dev server with hot-reload (`SERVICE=api`, `PORT=8000`) |
+| `make domain DOMAIN=x`  | Scaffold a domain + tests and register it                  |
 | `make check`            | Format and lint with Ruff, then type-check with mypy       |
 | `make test`             | Run all tests                                              |
 | `make test-unit`        | Unit tests only (global + all domains)                     |

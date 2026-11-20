@@ -15,7 +15,9 @@ make dev          # http://localhost:8000
 | Command        | Description                                                |
 | -------------- | ---------------------------------------------------------- |
 | `make install` | Install all dependencies via `uv sync`                     |
-| `make dev`     | Start dev server with hot-reload (`services.api.main:app`) |
+| `make help`    | List every target                                          |
+| `make dev`     | Start dev server with hot-reload (`SERVICE=api`, `PORT=8000`) |
+| `make domain DOMAIN=orders` | Scaffold a domain + tests and register it     |
 | `make lint`    | Run Ruff linter                                            |
 | `make fmt`     | Auto-format with Ruff                                      |
 | `make check`   | Format, lint, then mypy type-check                         |
@@ -39,7 +41,10 @@ src/
 ├── main.py             # Backward-compat shim; re-exports from services/api/main.py
 ├── config.py           # Settings (pydantic-settings, loads .env)
 ├── context.py          # RequestContext dataclass + ContextVar helpers
-├── lifespan.py         # Startup / graceful-shutdown lifecycle
+├── lifespan.py         # Startup / graceful-shutdown lifecycle (domain bootstrap + aclose)
+├── bootstrap.py        # Domain-module contract: BootstrapContext + validation
+├── deps.py             # Shared FastAPI deps: RequestContextDep, SettingsDep, Audit*Dep
+├── routing.py          # ResultRouter — unwraps Result[T, DomainError] return values
 ├── service.py          # Base Service class — extend for every domain service
 ├── state.py            # get_domain(): typed lookup of bootstrapped domains
 ├── store/
@@ -66,7 +71,8 @@ src/
 │       ├── multi.py    # Fan-out to multiple backends simultaneously
 │       └── stream.py   # Async-generator streaming backend
 ├── errors/
-│   ├── exceptions.py   # AppError base class for domain errors
+│   ├── exceptions.py   # AppError hierarchy (NotFoundError, ConflictError, …) to raise
+│   ├── domain.py       # DomainError (typed Failure values) + DomainFailure
 │   ├── problem.py      # RFC 9457 Problem Details builder (problem_response)
 │   └── handlers.py     # Global exception handlers + error sanitisation
 ├── log/
@@ -88,6 +94,7 @@ src/
 │       └── dependencies.py # FastAPI Annotated dependency aliases
 └── services/           # Independent ASGI application instances
     └── api/            # Default service — wires domains into the FastAPI app
+        ├── domains.py      # DOMAINS — modules this service serves
         ├── main.py         # create_app() call + uvicorn entry point
         └── Dockerfile      # Per-service container image
 ```
@@ -99,123 +106,92 @@ Every domain follows a strict four-layer stack (each layer depends only on the l
 ```
 KeyValueStore (protocol)
     └─▶ Repository  (data-access)
-            └─▶ Service     (business logic)
+            └─▶ Service     (business logic, returns Result[T, DomainError])
                     └─▶ Domain      (HTTP routing + bootstrap)
 ```
 
-Domains live under `src/domains/<name>/` and are wired into a service under `src/services/<name>/main.py`.
+Domains live under `src/domains/<name>/` and are registered with a service in
+`src/services/<service>/domains.py`.
 
-### 1 — Create a domain
+### 1 — Scaffold a domain
+
+```bash
+make domain DOMAIN=orders                 # entity defaults to the singular: Order
+make domain DOMAIN=people ENTITY=Person   # override the entity name
+```
+
+`scripts/new_domain.py` generates the package below plus unit / integration / fuzz tests
+under `tests/domains/orders/`, and appends the module to `src/services/api/domains.py`.
+The test suite's `client` fixture serves every registered domain, so the generated tests
+run straight away. `src/domains/example/` is the fuller reference (tracing, audit metadata).
 
 ```
 src/domains/orders/
-├── __init__.py
-├── models.py
-├── repository.py
-├── service.py
-├── domain.py
-└── dependencies.py
+├── models.py        # Order, CreateOrderRequest, UpdateOrderRequest
+├── errors.py        # OrderErrorCode + OrderError(DomainError) with code → HTTP status
+├── repository.py    # OrderRepository(store: KeyValueStore[str, Order])
+├── service.py       # OrderService — every method returns Result[T, OrderError]
+├── dependencies.py  # OrderServiceDep (resolves the bootstrapped service)
+└── domain.py        # OrdersDomain container, ResultRouter routes, make_router(), bootstrap()
 ```
 
-```python
-# src/domains/orders/models.py
-from pydantic import BaseModel
+### 2 — The domain contract
 
+`create_app(domains=[...])` validates each module when the app is created
+(see `src/bootstrap.py`). A module exposes any of:
 
-class Order(BaseModel):
-    id: str
-    description: str
-```
+| Hook | When | Purpose |
+| --- | --- | --- |
+| `make_router() -> APIRouter` | app creation | Routes, mounted under `API_PREFIX` |
+| `async bootstrap(boot: BootstrapContext) -> Domain` | lifespan startup | Open pools/clients, wire layers, return the domain instance |
+| `register_exception_handlers(app)` | app creation | Optional custom handlers |
 
-```python
-# src/domains/orders/repository.py
-from typing import TYPE_CHECKING
-from .models import Order
-
-if TYPE_CHECKING:
-    from store.protocol import KeyValueStore
-
-
-class OrderRepository:
-    def __init__(self, store: KeyValueStore[str, Order]) -> None:
-        self._store = store
-
-    async def find_by_id(self, order_id: str) -> Order | None:
-        return await self._store.get(order_id)
-
-    async def save(self, order: Order) -> Order:
-        await self._store.set(order.id, order)
-        return order
-```
+`BootstrapContext` carries `settings`, `audit_backend`, `audit_integrity` and `extra`
+(the `extra_context` dict). If the returned instance has `async aclose()`, it is awaited on
+shutdown after in-flight requests drain, in reverse bootstrap order. It also runs when a
+later domain's bootstrap fails, so a failed startup never leaks connections. Each domain
+must return a distinct type; resolve it with `state.get_domain(request, OrdersDomain)`.
 
 ```python
-# src/domains/orders/service.py
-from service import Service
-from .models import Order
-from .repository import OrderRepository
+# src/domains/orders/errors.py
+@dataclass(frozen=True, slots=True)
+class OrderError(DomainError[OrderErrorCode]):
+    order_id: str | None = None
 
-
-class OrderService(Service):
-    def __init__(self, repository: OrderRepository) -> None:
-        self._repo = repository
-
-    async def get(self, order_id: str) -> Order | None:
-        return await self._repo.find_by_id(order_id)
+    STATUS: ClassVar[Mapping[str, int]] = {
+        OrderErrorCode.NOT_FOUND: 404,
+        OrderErrorCode.STORAGE_ERROR: 500,  # 5xx: client sees only the reason phrase
+    }
 ```
 
 ```python
 # src/domains/orders/domain.py
-from typing import TYPE_CHECKING
-from fastapi import APIRouter, Request
-from state import get_domain
-from store.memory import InMemoryStore
-from .models import Order
-from .repository import OrderRepository
-from .service import OrderService
-
-if TYPE_CHECKING:
-    from config import Settings
-
-
-class OrdersDomain:
-    def __init__(self, service: OrderService) -> None:
-        self.service = service
-
-
-_router = APIRouter(prefix="/orders", tags=["orders"])
+_router = ResultRouter(prefix="/orders", tags=["orders"])
 
 
 @_router.get("/{order_id}")
-async def get_order(order_id: str, request: Request) -> dict:
-    domain = get_domain(request, OrdersDomain)  # typed: OrdersDomain
-    result = await domain.service.get(order_id)
-    return result.model_dump() if result else {}
+async def get_order(
+    order_id: str, svc: OrderServiceDep, ctx: RequestContextDep
+) -> Result[Order, OrderError]:
+    return await svc.get(order_id, ctx)
 
 
-def make_router() -> APIRouter:
-    return _router
-
-
-async def bootstrap(settings: Settings, **kwargs) -> OrdersDomain:
+async def bootstrap(boot: BootstrapContext) -> OrdersDomain:
     store: InMemoryStore[str, Order] = InMemoryStore()
-    repository = OrderRepository(store=store)
-    service = OrderService(repository=repository)
+    service = OrderService(
+        repository=OrderRepository(store=store),
+        audit_backend=boot.audit_backend,
+        audit_integrity=boot.audit_integrity,
+    )
     return OrdersDomain(service=service)
 ```
 
-### 2 — Register with a service
-
-```python
-# src/services/api/main.py
-from domains.orders import domain as orders_domain
-
-app = create_app(settings=settings, domains=[orders_domain])
-```
-
-The framework calls `make_router()` at startup to build the OpenAPI schema and
-`bootstrap(settings)` during lifespan to initialise connections. Resolve the domain
-instance by type with `state.get_domain(request, OrdersDomain)` — no string keys, no `cast()`
-(in real domains, do this in `dependencies.py` and inject the service via `Annotated[..., Depends]`).
+`ResultRouter` (`src/routing.py`) unwraps `Success(value)` into the response body and turns
+`Failure(OrderError(...))` into a problem response using `OrderError.STATUS`, with the error
+code as the `code` member. `response_model` is inferred from `Result[T, ...]`. Shared
+dependencies (`RequestContextDep`, `SettingsDep`, `AuditBackendDep`, `AuditIntegrityDep`)
+live in `src/deps.py`. For audit events from a service, use
+`audit.helpers.log_operation(backend, integrity, ctx, "orders.create", resource_id=...)`.
 
 Domain routers are mounted under `API_PREFIX` (default `/v1`), so the router above serves
 `/v1/orders/{order_id}`. Built-in routes (`/live`, `/health`, `/metrics`, `/docs`) are never prefixed.
@@ -237,7 +213,8 @@ Every error — exception handlers and middleware alike — is `application/prob
 }
 ```
 
-Raise `AppError` subclasses (`NotFoundError`, `ConflictError`, …) or `HTTPException` and the
+Return `Failure(DomainError)` from a `ResultRouter` route (the domain pattern above), or raise
+`AppError` subclasses (`NotFoundError`, `ConflictError`, …) or `HTTPException`, and the
 global handlers do the rest. For a custom domain error handler, return
 `errors.problem.problem_response(status, detail, request=request, code=...)` — extra keyword
 arguments become extension members. Validation errors carry the field list in `errors`.
@@ -336,7 +313,8 @@ orders_total.labels(status="completed").inc()
 
 ### Extra context properties
 
-Pass a dict to `extra_context`; each key is set on `app.state`:
+Pass a dict to `extra_context`; each key is set on `app.state`, and the dict is handed to every
+domain's `bootstrap()` as `boot.extra`:
 
 ```python
 app = create_app(extra_context={"db": my_db_pool, "feature_flags": flags})

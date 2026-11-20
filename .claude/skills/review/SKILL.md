@@ -67,14 +67,22 @@ Flag any violation as **ARCHITECTURE** severity.
 
 ### 2b. bootstrap() wiring
 
-`bootstrap(settings, **kwargs)` must follow exactly:
+`async bootstrap(boot: BootstrapContext)` must follow exactly:
 ```
-InMemoryStore[K, V] → {X}Repository(store=...) → {X}Service(repository=...) → {X}Domain(service=...)
+InMemoryStore[K, V] → {X}Repository(store=...) → {X}Service(repository=..., audit_*=boot.audit_*) → {X}Domain(service=...)
 ```
 
-- `InMemoryStore` must only appear in `bootstrap()`, never in repo/service constructors.
-- The domain instance is registered by `lifespan.py` (by module name and by type).
+- `InMemoryStore` (or any concrete store) must only appear in `bootstrap()`, never in repo/service constructors.
+- Anything opened in `bootstrap()` (pools, clients) must be closed in `{X}Domain.aclose()`.
+- The domain instance is registered by `lifespan.py` (by module name and by type); each domain returns a distinct type.
 - `make_router()` must return the module-level `_router`, not create a new one per call.
+- The module is listed in `src/services/<service>/domains.py`.
+
+### 2b'. Errors
+
+- Services return `Result[T, {X}Error]`; `{X}Error` subclasses `errors.domain.DomainError`.
+- Every `{X}ErrorCode` member has an entry in `{X}Error.STATUS` (unmapped codes become 500).
+- Routes use `routing.ResultRouter` and return the service `Result` unchanged — no per-route `match`, no per-domain exception handler for `DomainError`.
 
 ### 2c. RequestContext flow
 
@@ -87,7 +95,7 @@ Every `async def` method on `{X}Service` must:
 
 `dependencies.py` must:
 - Resolve the domain via `state.get_domain(request, {X}Domain)` — not a global, not a string key, no `cast()`.
-- Expose typed aliases (`{X}ServiceDep`, `RequestContextDep`) using `Annotated[..., Depends(...)]`.
+- Expose typed aliases (`{X}ServiceDep`) using `Annotated[..., Depends(...)]`; take `RequestContextDep`, `SettingsDep` and the audit deps from the shared `deps` module rather than redefining them.
 - Never instantiate services or stores directly.
 
 ---

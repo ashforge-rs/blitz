@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev lint fmt check test test-unit test-integration test-fuzz coverage openapi docker-build docker-push docker-run clean
+.PHONY: help install dev domain lint fmt check test test-unit test-integration test-fuzz coverage openapi docker-build docker-push docker-run clean
 
 # ── Multi-service layout ──────────────────────────────────────────────────────
 # Each service lives under src/services/<name>/ (main.py + Dockerfile) and
@@ -23,6 +23,11 @@ install: ## Install all dependencies (uv sync)
 
 dev: ## Run a service with hot-reload (SERVICE=api, PORT=8000)
 	uv run uvicorn services.$(SERVICE).main:app --reload --app-dir src --port $(PORT)
+
+domain: ## Scaffold a domain + tests and register it (DOMAIN=orders [ENTITY=Order] [SERVICE=api])
+	@test "$(origin DOMAIN)" = "command line" || \
+		(echo "usage: make domain DOMAIN=<snake_case> [ENTITY=<PascalCase>] [SERVICE=api]" && exit 1)
+	uv run python scripts/new_domain.py $(DOMAIN) --service $(SERVICE) $(if $(ENTITY),--entity $(ENTITY))
 
 lint: ## Run the Ruff linter
 	uv run ruff check src/ tests/

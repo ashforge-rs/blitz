@@ -65,13 +65,17 @@ src/domains/{domain}/
 ├── models.py        # Pydantic: Entity, CreateRequest, UpdateRequest
 ├── repository.py    # Data access — depends on KeyValueStore protocol
 ├── service.py       # Business logic — depends on Repository
-├── dependencies.py  # FastAPI Depends helpers: {X}ServiceDep, RequestContextDep
-└── domain.py        # {X}Domain class, router, make_router(), bootstrap()
+├── errors.py        # {X}ErrorCode + {X}Error(DomainError) with code → HTTP status
+├── dependencies.py  # FastAPI Depends helpers: {X}ServiceDep
+└── domain.py        # {X}Domain class (+ aclose), ResultRouter routes, make_router(), bootstrap()
 ```
 
-`bootstrap(settings, **kwargs)` wires `InMemoryStore → Repository → Service →
-Domain` and returns the domain instance. Register the domain module in
-`src/services/api/main.py` via `create_app(settings=settings, domains=[...])`.
+Scaffold new domains with `make domain DOMAIN={domain}` (`scripts/new_domain.py`) and
+then customise. `async bootstrap(boot: BootstrapContext)` wires `InMemoryStore →
+Repository → Service → Domain` and returns the domain instance; the module is
+registered in `src/services/api/domains.py`. Services return
+`Result[T, {X}Error]`; routes on a `ResultRouter` return that `Result` and the
+framework maps failures to RFC 9457 responses.
 
 Domain instances are stored under `app.state.domains[module.__name__]`.
 For example, `src/domains/example/domain.py` resolves to key
@@ -110,7 +114,7 @@ repository constructors.
 Every service method receives `ctx: RequestContext` as its **last parameter**.
 `RequestContext` is a plain dataclass (`src/context.py`) — not an HTTP object.
 Use `ctx.set(key, value)` to record provenance (e.g. `last_created_{entity}_id`).
-Obtain it in routes via `RequestContextDep` from `{domain}/dependencies.py`.
+Obtain it in routes via `RequestContextDep` from the shared `deps` module.
 
 ---
 
@@ -160,7 +164,7 @@ When asked to review code against the pattern:
 
 1. Read the domain files in order: `models → repository → service → domain → dependencies`.
 2. Check each SOLID principle explicitly.
-3. Check `bootstrap()` wires correctly and is registered in `src/services/api/main.py`.
+3. Check `bootstrap()` wires correctly and is registered in `src/services/api/domains.py`.
 4. Check `RequestContext` flows through all service methods.
 5. Check tests exist at all three layers.
 6. Run `uv run mypy src/` and `uv run ruff check src/ tests/` — report any failures.
