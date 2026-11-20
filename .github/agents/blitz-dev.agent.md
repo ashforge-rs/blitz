@@ -132,7 +132,8 @@ Fuzz tests live under each domain package (`tests/domains/{domain}/fuzz/`),
 typically `test_fuzz.py` within that folder.
 
 Coverage is rendered as a Rich table sorted by coverage % (worst first) via the
-root `conftest.py` plugin — `make coverage` bypasses this; use `uv run pytest`.
+root `conftest.py` plugin. It only renders when the run collects coverage
+(`make coverage`, or `uv run pytest --cov=src`); plain `pytest` prints no table.
 
 ---
 

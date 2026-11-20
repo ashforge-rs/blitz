@@ -72,7 +72,7 @@
         {
             "label": "test: coverage",
             "type": "shell",
-            "command": "uv run pytest --cov=src --cov-report=term-missing --cov-report=html --cov-fail-under=80",
+            "command": "uv run pytest --cov=src --cov-report=html --cov-fail-under=80",
             "group": "test",
             "presentation": {
                 "reveal": "always",
