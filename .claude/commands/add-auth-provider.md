@@ -27,4 +27,4 @@ class MyAuthProvider:
 ### After implementation
 1. Show an example of protecting a route with `Depends(get_auth_context)` from `auth.dependency`
 2. Write at least two tests: one for the 200 success path and one for the 401/403 rejection path
-3. Run `uv run ruff check --fix src/ tests/ && uv run ruff format src/ tests/`
+3. Run `make fmt && make verify` — `make verify` must exit 0

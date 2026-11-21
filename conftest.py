@@ -14,8 +14,19 @@ if TYPE_CHECKING:
     import pytest
 
 
+def _coverage_requested(config: pytest.Config) -> bool:
+    """True only when this run collects coverage (``--cov`` given, ``--no-cov`` absent).
+
+    Without this guard a leftover ``.coverage`` file from an earlier run would be
+    rendered after every plain ``pytest`` invocation.
+    """
+    return bool(config.getoption("cov_source", None)) and not config.getoption("no_cov", False)
+
+
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Hook called after the full test run.  Renders the coverage table."""
+    if not _coverage_requested(session.config):
+        return
     try:
         import coverage
         from rich import box
@@ -25,15 +36,13 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     except ImportError:
         return
 
-    cov_data = coverage.CoverageData()
     cov_file = os.environ.get("COVERAGE_FILE", ".coverage")
     if not Path(cov_file).exists():
         return
 
-    cov_data.read()
-
     cov = coverage.Coverage(data_file=cov_file)
     cov.load()
+    cov_data = cov.get_data()
 
     console = Console()
     console.print()
@@ -111,7 +120,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         table.add_row(
             "[bold white]TOTAL[/bold white]",
             f"[bold]{total_stmts}[/bold]",
-            Text(f"[bold]{total_miss}[/bold]", style="red" if total_miss else "green"),
+            Text(str(total_miss), style="bold red" if total_miss else "bold green"),
             Text(f"{total_pct:.0f}%", style=pct_style),
             "",
         )

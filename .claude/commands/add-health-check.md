@@ -45,4 +45,4 @@ Register by passing the callable to `create_app(health_checks=[...])` in `src/se
 
 ### After implementation
 1. Write a test that mocks the dependency to verify both the healthy (`200`) and unhealthy (`503`) paths
-2. Run `uv run ruff check --fix src/ tests/ && uv run ruff format src/ tests/`
+2. Run `make fmt && make verify` — `make verify` must exit 0

@@ -1,32 +1,23 @@
-import inspect
-from collections.abc import Callable  # noqa: TC003 — used at runtime in DomainRouter.add_api_route
-from functools import wraps
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, Request, status
-from returns.result import Failure, Result, Success
+from fastapi import APIRouter, status
+from returns.result import Result
 
-from errors.problem import problem_response
+from deps import RequestContextDep
+from routing import ResultRouter
 from store.memory import InMemoryStore
 
-from .dependencies import (  # noqa: TC001 — FastAPI resolves Annotated[..., Depends] at runtime via get_type_hints()
-    ItemServiceDep,
-    RequestContextDep,
-)
-from .errors import ItemDomainError, ItemError, ItemErrorCode
+from .dependencies import ItemServiceDep
+from .errors import ItemError
 from .models import CreateItemRequest, Item, UpdateItemRequest
 from .repository import ItemRepository
 from .service import ItemService
 
 if TYPE_CHECKING:
-    from fastapi import FastAPI
-    from fastapi.responses import JSONResponse
-
-    from audit.backend import AuditBackend, AuditIntegrity
-    from config import Settings
+    from bootstrap import BootstrapContext
 
 # ---------------------------------------------------------------------------
-# Domain container
+# Domain container — what bootstrap() returns and get_domain() looks up.
 # ---------------------------------------------------------------------------
 
 
@@ -36,139 +27,50 @@ class ItemsDomain:
     def __init__(self, service: ItemService) -> None:
         self.service = service
 
-
-# ---------------------------------------------------------------------------
-# Domain exception handler — single place that maps ItemError → HTTP.
-#
-# Registered via register_exception_handlers(app), called by app.py for every
-# domain module that exposes it.  Equivalent to a Gin error middleware: it runs
-# after the handler and translates domain errors into responses.
-# ---------------------------------------------------------------------------
-
-
-async def _item_error_handler(request: Request, exc: ItemDomainError) -> JSONResponse:
-    """Convert ItemDomainError to the appropriate HTTP JSON response."""
-    match exc.error.code:
-        case ItemErrorCode.NOT_FOUND:
-            return problem_response(
-                status.HTTP_404_NOT_FOUND, exc.error.message, request=request, code=exc.error.code
-            )
-        case ItemErrorCode.CONFLICT:
-            return problem_response(
-                status.HTTP_409_CONFLICT, exc.error.message, request=request, code=exc.error.code
-            )
-        case ItemErrorCode.STORAGE_ERROR:
-            # Never leak storage internals to the client.
-            return problem_response(
-                status.HTTP_500_INTERNAL_SERVER_ERROR,
-                "Storage error",
-                request=request,
-                code=exc.error.code,
-            )
-
-
-def register_exception_handlers(app: FastAPI) -> None:
-    """Register domain-scoped exception handlers on the FastAPI app.
-
-    Called automatically by ``create_app()`` for every domain module that
-    exposes this function.  Equivalent to ``r.Use(errorMiddleware)`` in Gin.
-    """
-    app.add_exception_handler(ItemDomainError, _item_error_handler)  # type: ignore[arg-type]
+    async def aclose(self) -> None:
+        """Called on shutdown — close pools / clients opened in bootstrap()."""
 
 
 # ---------------------------------------------------------------------------
-# DomainRouter — intercepts Result return values at the routing layer.
-#
-# Every handler registered on this router is automatically wrapped: if the
-# handler returns a Result, Success is unwrapped to its inner value and
-# Failure raises ItemDomainError (caught by the exception handler above).
-# Handlers that return a plain value or None pass through unmodified.
-#
-# FastAPI resolves dependencies from the original function's __signature__,
-# which is explicitly preserved on the wrapper so DI works correctly.
+# Routes — thin delegates.  ResultRouter unwraps Success(...) into the response
+# body and turns Failure(ItemError) into a problem response, using the
+# ItemError.STATUS mapping; response_model is inferred from Result[T, ...].
 # ---------------------------------------------------------------------------
 
-
-class DomainRouter(APIRouter):
-    """APIRouter that transparently unwraps Result return values."""
-
-    def add_api_route(self, path: str, endpoint: Callable[..., Any], **kwargs: Any) -> None:
-        @wraps(endpoint)
-        async def _wrapper(*args: Any, **kw: Any) -> Any:
-            rv = await endpoint(*args, **kw)
-            match rv:
-                case Success(v):
-                    return v
-                case Failure(e):
-                    raise ItemDomainError(e)
-                case _:
-                    return rv
-
-        # Preserve the original signature so FastAPI resolves Depends() correctly.
-        _wrapper.__signature__ = inspect.signature(endpoint)  # type: ignore[attr-defined]
-        super().add_api_route(path, _wrapper, **kwargs)
+_router = ResultRouter(prefix="/example", tags=["example"])
 
 
-# ---------------------------------------------------------------------------
-# Gin-style endpoint group — pure service delegates, zero error-handling logic.
-# ---------------------------------------------------------------------------
+@_router.get("/")
+async def list_items(svc: ItemServiceDep, ctx: RequestContextDep) -> Result[list[Item], ItemError]:
+    return await svc.list_all(ctx)
 
 
-class ItemEndpoints:
-    def __init__(self, service: ItemServiceDep, ctx: RequestContextDep) -> None:
-        self._svc = service
-        self._ctx = ctx
-
-    async def list_items(self) -> Result[list[Item], ItemError]:
-        return await self._svc.list_all(self._ctx)
-
-    async def create_item(self, body: CreateItemRequest) -> Result[Item, ItemError]:
-        return await self._svc.create(body, self._ctx)
-
-    async def get_item(self, item_id: str) -> Result[Item, ItemError]:
-        return await self._svc.get(item_id, self._ctx)
-
-    async def update_item(self, item_id: str, body: UpdateItemRequest) -> Result[Item, ItemError]:
-        return await self._svc.update(item_id, body, self._ctx)
-
-    async def delete_item(self, item_id: str) -> Result[None, ItemError]:
-        return await self._svc.delete(item_id, self._ctx)
-
-
-ItemEndpointsDep = Annotated[ItemEndpoints, Depends(ItemEndpoints)]
-
-# ---------------------------------------------------------------------------
-# Router
-# ---------------------------------------------------------------------------
-
-_router = DomainRouter(prefix="/example", tags=["example"])
-
-
-@_router.get("/", response_model=list[Item])
-async def list_items(ep: ItemEndpointsDep) -> Result[list[Item], ItemError]:
-    return await ep.list_items()
-
-
-@_router.post("/", response_model=Item, status_code=status.HTTP_201_CREATED)
-async def create_item(body: CreateItemRequest, ep: ItemEndpointsDep) -> Result[Item, ItemError]:
-    return await ep.create_item(body)
-
-
-@_router.get("/{item_id}", response_model=Item)
-async def get_item(item_id: str, ep: ItemEndpointsDep) -> Result[Item, ItemError]:
-    return await ep.get_item(item_id)
-
-
-@_router.patch("/{item_id}", response_model=Item)
-async def update_item(
-    item_id: str, body: UpdateItemRequest, ep: ItemEndpointsDep
+@_router.post("/", status_code=status.HTTP_201_CREATED)
+async def create_item(
+    body: CreateItemRequest, svc: ItemServiceDep, ctx: RequestContextDep
 ) -> Result[Item, ItemError]:
-    return await ep.update_item(item_id, body)
+    return await svc.create(body, ctx)
 
 
-@_router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
-async def delete_item(item_id: str, ep: ItemEndpointsDep) -> Result[None, ItemError]:
-    return await ep.delete_item(item_id)
+@_router.get("/{item_id}")
+async def get_item(
+    item_id: str, svc: ItemServiceDep, ctx: RequestContextDep
+) -> Result[Item, ItemError]:
+    return await svc.get(item_id, ctx)
+
+
+@_router.patch("/{item_id}")
+async def update_item(
+    item_id: str, body: UpdateItemRequest, svc: ItemServiceDep, ctx: RequestContextDep
+) -> Result[Item, ItemError]:
+    return await svc.update(item_id, body, ctx)
+
+
+@_router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_item(
+    item_id: str, svc: ItemServiceDep, ctx: RequestContextDep
+) -> Result[None, ItemError]:
+    return await svc.delete(item_id, ctx)
 
 
 def make_router() -> APIRouter:
@@ -180,30 +82,20 @@ def make_router() -> APIRouter:
 # ---------------------------------------------------------------------------
 
 
-async def bootstrap(settings: Settings, **kwargs: Any) -> ItemsDomain:
+async def bootstrap(boot: BootstrapContext) -> ItemsDomain:
     """
-    Wires together the storage, repository, and service for the items domain.
-
-    Receives ``audit_backend`` and ``audit_integrity`` from the framework
-    lifespan via ``**kwargs`` so the service can emit structured audit events
-    without reaching back into ``app.state`` (Dependency Inversion Principle).
+    Wire storage → repository → service for the items domain.
 
     To swap the storage backend: replace ``InMemoryStore()`` with any class
-    that satisfies the ``KeyValueStore`` protocol (e.g. a Redis-backed store).
-    Nothing else in this module — or in the service/repository layers — needs
-    to change.
+    that satisfies the ``KeyValueStore`` protocol (e.g. a Redis-backed store),
+    and close it in :meth:`ItemsDomain.aclose`.  Nothing else in this module —
+    or in the service/repository layers — needs to change.
     """
-    from audit.backends.noop import NoopAuditBackend
-    from audit.integrity import NoIntegrity
-
-    audit_backend: AuditBackend = kwargs.get("audit_backend") or NoopAuditBackend()
-    audit_integrity: AuditIntegrity = kwargs.get("audit_integrity") or NoIntegrity()
-
     store: InMemoryStore[str, Item] = InMemoryStore()
     repository = ItemRepository(store=store)
     service = ItemService(
         repository=repository,
-        audit_backend=audit_backend,
-        audit_integrity=audit_integrity,
+        audit_backend=boot.audit_backend,
+        audit_integrity=boot.audit_integrity,
     )
     return ItemsDomain(service=service)

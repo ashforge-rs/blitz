@@ -227,3 +227,68 @@ async def test_delete_emits_audit_event(repo: ItemRepository, ctx: MagicMock) ->
     from audit.backend import AuditResult
 
     assert evt.result == AuditResult.SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# Storage failures — every method converts backend exceptions to STORAGE_ERROR
+# ---------------------------------------------------------------------------
+
+
+class _BrokenStore(InMemoryStore[str, Item]):
+    async def get(self, key):
+        raise ConnectionError("store down")
+
+    async def set(self, key, value):
+        raise ConnectionError("store down")
+
+    async def delete(self, key):
+        raise ConnectionError("store down")
+
+    async def keys(self):
+        raise ConnectionError("store down")
+
+
+@pytest.fixture
+def broken() -> tuple[ItemService, list]:
+    captured: list = []
+
+    class CapturingBackend(NoopAuditBackend):
+        async def log(self, event) -> None:  # type: ignore[override]
+            captured.append(event)
+
+    svc = ItemService(
+        repository=ItemRepository(store=_BrokenStore()),
+        audit_backend=CapturingBackend(),
+        audit_integrity=NoIntegrity(),
+    )
+    return svc, captured
+
+
+@pytest.mark.parametrize(
+    ("call", "operation", "audited"),
+    [
+        (lambda s, ctx: s.get("x", ctx), "items.get", False),
+        (lambda s, ctx: s.list_all(ctx), "items.list_all", False),
+        (lambda s, ctx: s.create(CreateItemRequest(name="W"), ctx), "items.create", True),
+        (lambda s, ctx: s.update("x", UpdateItemRequest(name="W"), ctx), "items.update", True),
+        (lambda s, ctx: s.delete("x", ctx), "items.delete", True),
+    ],
+)
+async def test_storage_exception_becomes_storage_error(
+    broken, ctx: MagicMock, call, operation: str, audited: bool
+) -> None:
+    from audit.backend import AuditResult
+
+    svc, captured = broken
+    result = await call(svc, ctx)
+
+    assert isinstance(result, Failure)
+    assert result.failure().code == ItemErrorCode.STORAGE_ERROR
+    assert result.failure().message == "store down"
+    if audited:
+        (evt,) = captured
+        assert evt.metadata["operation"] == operation
+        assert evt.result == AuditResult.FAILURE
+        assert evt.metadata["error"] == "store down"
+    else:
+        assert captured == []

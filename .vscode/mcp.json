@@ -1,98 +1,50 @@
 {
     "servers": {
-        // GitHub — read/write PRs, issues, review comments, and query Actions
-        // workflow runs. Pairs well with the release-please and pr-title workflows.
-        // Requires a PAT with: repo, read:org, workflow scopes.
-        "github": {
-            "type": "stdio",
-            "command": "npx",
-            "args": [
-                "-y",
-                "@modelcontextprotocol/server-github"
-            ],
-            "env": {
-                "GITHUB_PERSONAL_ACCESS_TOKEN": "${input:githubToken}"
+        // Context7 — current, version-specific library docs (FastAPI, pydantic,
+        // pydantic-settings, returns, limits, Python 3.15) so agents check APIs
+        // instead of guessing. Hosted by Upstash; queries contain library names and
+        // topics only. The API key is optional but raises rate limits — get a free
+        // one at https://context7.com/dashboard.
+        "context7": {
+            "type": "http",
+            "url": "https://mcp.context7.com/mcp",
+            "headers": {
+                "Authorization": "Bearer ${input:context7ApiKey}"
             }
         },
-        // Fetch — issue arbitrary HTTP requests against the running local server
-        // or any external API. Useful for probing /health, /metrics, and custom
-        // routes without leaving the editor.
-        "fetch": {
-            "type": "stdio",
-            "command": "npx",
-            "args": [
-                "-y",
-                "@modelcontextprotocol/server-fetch"
-            ]
+        // GitHub (official, github/github-mcp-server) — PRs, review threads, issues,
+        // Actions runs and logs, Dependabot PRs. Hosted by GitHub; VS Code signs in
+        // with your GitHub account (OAuth), so no token is stored here.
+        "github": {
+            "type": "http",
+            "url": "https://api.githubcopilot.com/mcp/"
         },
-        // Postgres — direct SQL access for DB-backed domains. Provide the
-        // connection URL when prompted; it is stored securely in the OS keychain
-        // and never written to disk. Set to your local dev database.
-        "postgres": {
+        // Grafana (grafana/mcp-grafana) — query Prometheus metrics, dashboards and
+        // alert rules from the local stack (`docker compose up`, Grafana on :3000).
+        // Create a service account token in Grafana: Administration → Users and
+        // access → Service accounts (Viewer role is enough for read-only use).
+        "grafana": {
             "type": "stdio",
-            "command": "npx",
-            "args": [
-                "-y",
-                "@modelcontextprotocol/server-postgres",
-                "${input:postgresUrl}"
-            ]
-        },
-        // SQLite — inspect test database state between integration test steps.
-        // Useful for verifying writes landed, seeding fixture data, and asserting
-        // side effects without going through the HTTP layer.
-        // Point DB_PATH at your test database file, e.g. ./test.db or :memory:.
-        "sqlite": {
-            "type": "stdio",
-            "command": "npx",
-            "args": [
-                "-y",
-                "@modelcontextprotocol/server-sqlite",
-                "${input:sqliteDbPath}"
-            ]
-        },
-        // Sequential thinking — structured chain-of-thought for multi-step
-        // integration test planning. Useful for designing request sequences:
-        // create -> verify -> mutate -> assert side-effects, and for
-        // reasoning through auth flows and rate-limit edge cases.
-        "sequential-thinking": {
-            "type": "stdio",
-            "command": "npx",
-            "args": [
-                "-y",
-                "@modelcontextprotocol/server-sequential-thinking"
-            ]
-        },
-        // Filesystem — read/write access scoped strictly to src/ and tests/.
-        // Allows AI agents to navigate and modify project code without
-        // access to anything outside the source tree.
-        "filesystem": {
-            "type": "stdio",
-            "command": "npx",
-            "args": [
-                "-y",
-                "@modelcontextprotocol/server-filesystem",
-                "${workspaceFolder}/src",
-                "${workspaceFolder}/tests"
-            ]
+            "command": "uvx",
+            "args": ["mcp-grafana@2.2.0"],
+            "env": {
+                "GRAFANA_URL": "http://localhost:3000",
+                "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${input:grafanaToken}"
+            }
         }
     },
     "inputs": [
         {
-            "id": "githubToken",
+            "id": "context7ApiKey",
             "type": "promptString",
-            "description": "GitHub Personal Access Token (repo + workflow scopes)",
+            "description": "Context7 API key (optional — https://context7.com/dashboard)",
             "password": true
         },
         {
-            "id": "postgresUrl",
+            "id": "grafanaToken",
             "type": "promptString",
-            "description": "PostgreSQL connection URL  e.g. postgres://user:pass@localhost:5432/blitz",
+            "description": "Grafana service account token for http://localhost:3000",
             "password": true
-        },
-        {
-            "id": "sqliteDbPath",
-            "type": "promptString",
-            "description": "Path to SQLite test database file  e.g. ./test.db"
         }
     ]
 }

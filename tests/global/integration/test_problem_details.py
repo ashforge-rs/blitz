@@ -2,11 +2,6 @@
 
 import json
 
-from httpx import ASGITransport, AsyncClient
-
-from app import create_app
-from audit.backends.noop import NoopAuditBackend
-from config import Settings
 from errors.problem import PROBLEM_JSON, problem
 
 
@@ -40,7 +35,7 @@ async def test_domain_error_includes_code(client):
     assert body["code"] == "not_found"
 
 
-async def test_http_exception_headers_preserved(test_settings):
+async def test_http_exception_headers_preserved(make_app, make_client):
     class _NoCreds:
         async def authenticate(self, request):
             return None
@@ -52,49 +47,43 @@ async def test_http_exception_headers_preserved(test_settings):
 
     from auth.dependency import get_auth_context
 
-    app = create_app(
-        settings=test_settings, audit_backend=NoopAuditBackend(), auth_provider=_NoCreds()
-    )
+    app = make_app(auth_provider=_NoCreds())
 
     @app.get("/protected")
     async def protected(principal=Depends(get_auth_context)):  # noqa: B008
         return principal
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with make_client(app) as c:
         r = await c.get("/protected")
     _assert_problem(r, 401)
     assert r.headers["www-authenticate"] == "Bearer"
 
 
-async def test_structured_http_exception_detail_goes_to_errors(test_settings):
+async def test_structured_http_exception_detail_goes_to_errors(make_app, make_client):
     from fastapi import HTTPException
 
-    app = create_app(settings=test_settings, audit_backend=NoopAuditBackend())
+    app = make_app()
 
     @app.get("/structured")
     async def structured():
         raise HTTPException(status_code=409, detail={"field": "email", "reason": "taken"})
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with make_client(app) as c:
         body = _assert_problem(await c.get("/structured"), 409)
     assert body["errors"] == {"field": "email", "reason": "taken"}
     assert body["detail"] == "Conflict"
 
 
-async def test_rate_limit_is_problem(test_settings):
-    settings = Settings(**{**test_settings.model_dump(), "RATE_LIMIT": "1/minute"})
-    app = create_app(settings=settings, audit_backend=NoopAuditBackend())
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+async def test_rate_limit_is_problem(make_app, make_client):
+    async with make_client(make_app(settings={"RATE_LIMIT": "1/minute"})) as c:
         await c.get("/metrics")
         r = await c.get("/metrics")
     _assert_problem(r, 429)
     assert "retry-after" in r.headers
 
 
-async def test_size_limit_is_problem(test_settings):
-    settings = Settings(**{**test_settings.model_dump(), "MAX_REQUEST_SIZE_BYTES": 10})
-    app = create_app(settings=settings, audit_backend=NoopAuditBackend())
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+async def test_size_limit_is_problem(make_app, make_client):
+    async with make_client(make_app(settings={"MAX_REQUEST_SIZE_BYTES": 10})) as c:
         _assert_problem(await c.post("/live", content=b"x" * 100), 413)
 
 

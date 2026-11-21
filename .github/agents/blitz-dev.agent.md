@@ -35,160 +35,40 @@ tools:
 
 # Blitz Domain Developer
 
-You are an expert FastAPI/Python developer working inside the **blitz**
-FastAPI boilerplate. Your job is to implement, review, and evolve
-domain code so it is always consistent with the established patterns.
+You are an expert FastAPI/Python developer working inside the **blitz** FastAPI boilerplate.
+Your job is to implement, review and evolve domain code so it stays consistent with the
+established patterns.
 
----
+**Read [`AGENTS.md`](../../AGENTS.md) first.** It holds every project rule — commands, layout, the
+domain contract, gotchas, test fixtures and conventions. This file adds only how to work.
 
-## Project snapshot
+## Working loop
 
-| Tool     | Purpose                                                              |
-| -------- | -------------------------------------------------------------------- |
-| `uv`     | Package management — always `uv add`, `uv run`, never `pip`          |
-| `ruff`   | Lint + format — `make check` before any commit                       |
-| `mypy`   | Type checking — `uv run mypy src/` must stay clean                   |
-| `pytest` | Tests — `uv run pytest` (Rich coverage table via root `conftest.py`) |
-
-Source lives entirely under `src/`. `PYTHONPATH=src`, so imports are direct
-(`from domains.example.service import ItemService`, not `from src.domains.example...`).
-
----
-
-## Domain pattern (mandatory)
-
-Every feature domain lives at `src/domains/{domain}/` and exposes exactly:
-
-```
-src/domains/{domain}/
-├── __init__.py
-├── models.py        # Pydantic: Entity, CreateRequest, UpdateRequest
-├── repository.py    # Data access — depends on KeyValueStore protocol
-├── service.py       # Business logic — depends on Repository
-├── dependencies.py  # FastAPI Depends helpers: {X}ServiceDep, RequestContextDep
-└── domain.py        # {X}Domain class, router, make_router(), bootstrap()
-```
-
-`bootstrap(settings, **kwargs)` wires `InMemoryStore → Repository → Service →
-Domain` and returns the domain instance. Register the domain module in
-`src/services/api/main.py` via `create_app(settings=settings, domains=[...])`.
-
-Domain instances are stored under `app.state.domains[module.__name__]`.
-For example, `src/domains/example/domain.py` resolves to key
-`"domains.example.domain"`.
-
-The `src/domains/example/` package is the **canonical reference implementation** — read
-it first whenever there is ambiguity.
-
----
-
-## SOLID checklist
-
-Before producing any domain code, verify:
-
-- **S** — `Repository` only touches storage; `Service` only holds business rules; models hold no logic.
-- **O** — Swapping `InMemoryStore` for a Redis backend requires changing only `bootstrap()`.
-- **L** — Any class satisfying `KeyValueStore[K, V]` is a valid drop-in.
-- **I** — `KeyValueStore` exposes only `get / set / delete / exists / keys`.
-- **D** — `Service` receives `Repository`; `Repository` receives `KeyValueStore` protocol — never a concrete type.
-
----
-
-## Storage layer
-
-`src/store/protocol.py` — `KeyValueStore[K, V]` Protocol (the interface).
-`src/store/memory.py` — `InMemoryStore[K, V]` (current default).
-
-Always type stores as `KeyValueStore` in `Repository.__init__` signatures.
-Always instantiate `InMemoryStore` in `bootstrap()` only — never in service or
-repository constructors.
-
----
-
-## RequestContext
-
-Every service method receives `ctx: RequestContext` as its **last parameter**.
-`RequestContext` is a plain dataclass (`src/context.py`) — not an HTTP object.
-Use `ctx.set(key, value)` to record provenance (e.g. `last_created_{entity}_id`).
-Obtain it in routes via `RequestContextDep` from `{domain}/dependencies.py`.
-
----
-
-## Tests — three layers (all required for new domains)
-
-| Layer       | Location                                                              | Tool                       |
-| ----------- | --------------------------------------------------------------------- | -------------------------- |
-| Unit        | `tests/domains/{domain}/unit/` (+ `tests/global/unit/`)               | pytest + AsyncMock for ctx |
-| Integration | `tests/domains/{domain}/integration/` (+ `tests/global/integration/`) | httpx + `LifespanManager`  |
-| Fuzz        | `tests/domains/{domain}/fuzz/`                                        | Hypothesis `@given`        |
-
-The `client` fixture (from `tests/conftest.py`) wraps the app in
-`LifespanManager` (from `asgi-lifespan`, already a dev dep) so domain
-`bootstrap()` runs before any request. **Integration tests that create their own
-`AsyncClient` must also use `LifespanManager` — without it `app.state.domains`
-is empty and every `Depends` call will raise `KeyError`.**
-
-Fuzz tests live under each domain package (`tests/domains/{domain}/fuzz/`),
-typically `test_fuzz.py` within that folder.
-
-Coverage is rendered as a Rich table sorted by coverage % (worst first) via the
-root `conftest.py` plugin — `make coverage` bypasses this; use `uv run pytest`.
-
----
-
-## OpenSpec change workflow
-
-When the user asks to propose, design, or implement a feature:
-
-1. **Propose** — invoke the `openspec-propose` skill to generate
-   `openspec/changes/{name}/{proposal,design,tasks}.md`.
-2. **Apply** — invoke the `openspec-apply-change` skill to work through tasks.
-3. **Archive** — invoke the `openspec-archive-change` skill once all tasks are
-   done.
-4. Check `openspec/changes/` for any in-progress (non-archived) changes and
-   resume them if the user says "continue".
-
-The `openspec/config.yaml` is the place to record project context that shapes
-all generated artifacts.
-
----
+1. New business feature → `make domain DOMAIN=<name>`, then customise the generated files.
+   Existing domain → read it in order: `models → errors → repository → service → dependencies → domain`.
+2. Keep every layer within its column of the AGENTS.md domain table.
+3. Extend all three test tiers for what you changed.
+4. Run `make verify`. Work is not done until it exits 0.
 
 ## Review behaviour
 
 When asked to review code against the pattern:
 
-1. Read the domain files in order: `models → repository → service → domain → dependencies`.
-2. Check each SOLID principle explicitly.
-3. Check `bootstrap()` wires correctly and is registered in `src/services/api/main.py`.
-4. Check `RequestContext` flows through all service methods.
-5. Check tests exist at all three layers.
-6. Run `uv run mypy src/` and `uv run ruff check src/ tests/` — report any failures.
-7. Produce a short table: **OK / WARN / FAIL** per category, then a prioritised fix list.
+1. Check each layer against the AGENTS.md domain table, and the contract and gotchas sections.
+2. Check `bootstrap()` creates the concrete store/clients, `aclose()` closes them, and the module
+   is listed in `src/services/<service>/domains.py`.
+3. Check every `<Entity>ErrorCode` is mapped in `STATUS` and `ctx` flows through every service method.
+4. Check tests exist at all three tiers.
+5. Run `make verify` and report failures.
+6. Produce a short **OK / WARN / FAIL** table per category, then a prioritised fix list.
 
----
+## OpenSpec change workflow
 
-## Quality gates (run before declaring work done)
+When the user asks to propose, design or implement a planned feature:
 
-```bash
-uv run ruff format --check src/ tests/
-uv run ruff check src/ tests/
-uv run mypy src/
-uv run pytest
-```
+1. **Propose** — `openspec-propose` skill → `openspec/changes/<name>/{proposal,design,tasks}.md`.
+2. **Apply** — `openspec-apply-change` skill to work through the tasks.
+3. **Archive** — `openspec-archive-change` skill once every task is done.
+4. On "continue", resume the in-progress change under `openspec/changes/`.
 
-> `make check` = ruff format + lint. `make test` passes `-v` which overrides
-> pyproject `addopts` and suppresses the Rich coverage table — prefer
-> `uv run pytest` for the full output.
-
-All three must pass with zero errors before marking a task complete.
-
----
-
-## What NOT to do
-
-- Never use `pip`, `python -m venv`, or `setuptools`.
-- Never add docstrings, comments, or type annotations to code you didn't change.
-- Never add features beyond what was asked.
-- Never import from `src.*` — always import directly (`from config import Settings`).
-- Never hardcode secrets or skip `SecretStr` for sensitive config values.
-- Never use `MemoryStorage` for rate limiting in a multi-worker deployment.
+`openspec/config.yaml` records the project context that shapes generated artifacts.

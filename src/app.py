@@ -1,16 +1,20 @@
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Iterable
 from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
+from fastapi.routing import APIRoute
 from limits.aio.storage import MemoryStorage, Storage
+from starlette.routing import BaseRoute, Mount
 
 from audit.backends.loguru import LoguruAuditBackend
 from audit.integrity import NoIntegrity
+from bootstrap import validate_domain_module
 from config import Settings, get_settings
 from errors.handlers import register_error_handlers
 from lifespan import lifespan
 from middleware.stack import register_middleware
 from routes import health, metrics
+from routing import runtime_signature
 from telemetry.setup import telemetry_config
 
 if TYPE_CHECKING:
@@ -65,22 +69,23 @@ def create_app(
         A list of async callables each returning a dict with at least
         ``{"name": str, "healthy": bool}``.
     domains:
-        A list of domain modules, each exposing:
-
-        - ``make_router() -> APIRouter`` — called once at app-creation time;
-          returns the router with all routes for this domain.  It is mounted
-          under ``settings.API_PREFIX`` (default ``/v1``).
-        - ``async bootstrap(settings: Settings, **kwargs) -> Any`` — called
-          during lifespan startup; initialise DB pools, clients, etc. and return
-          the domain instance.  The instance is stored on
-          ``app.state.domains[module.__name__]``; resolve it in dependencies
-          with :func:`state.get_domain` (typed lookup by domain class).
+        A list of domain modules implementing the contract described in
+        :mod:`bootstrap` (``make_router``, ``async bootstrap(boot)``, optional
+        ``register_exception_handlers``).  Each module is validated here, so a
+        malformed module fails at app creation rather than at first request.
+        Routers are mounted under ``settings.API_PREFIX`` (default ``/v1``);
+        bootstrapped instances are resolved with :func:`state.get_domain`.
     extra_context:
-        Arbitrary key-value pairs stored on ``app.state`` for use across the
-        application (e.g. database pools, feature flag clients).
+        Arbitrary key-value pairs stored on ``app.state`` and passed to every
+        domain's ``bootstrap()`` as ``boot.extra`` (e.g. database pools,
+        feature flag clients).
     """
     if settings is None:
         settings = get_settings()
+
+    domain_modules = list(domains or [])
+    for module in domain_modules:
+        validate_domain_module(module)
 
     is_prod = settings.ENVIRONMENT == "production"
 
@@ -136,11 +141,11 @@ def create_app(
     app.state.in_flight = 0
     app.state.domains = {}
     app.state.domains_by_type = {}
-    app.state._domain_modules = domains or []
+    app.state._domain_modules = domain_modules
+    app.state.extra_context = dict(extra_context or {})
 
-    if extra_context:
-        for key, value in extra_context.items():
-            setattr(app.state, key, value)
+    for key, value in app.state.extra_context.items():
+        setattr(app.state, key, value)
 
     # --- Middleware (order defined in stack.py) ---
     register_middleware(app, settings, rate_limit_storage=rate_limit_storage or MemoryStorage())
@@ -160,10 +165,27 @@ def create_app(
         app.include_router(metrics.router)
 
     # --- Domain routes (registered at app-creation time so OpenAPI schema is complete) ---
-    for domain_module in app.state._domain_modules:
+    for domain_module in domain_modules:
         if hasattr(domain_module, "make_router"):
-            app.include_router(domain_module.make_router(), prefix=settings.API_PREFIX)
+            router = domain_module.make_router()
+            _check_route_annotations(router.routes)
+            app.include_router(router, prefix=settings.API_PREFIX)
         if hasattr(domain_module, "register_exception_handlers"):
             domain_module.register_exception_handlers(app)
 
     return app
+
+
+def _check_route_annotations(routes: Iterable[BaseRoute]) -> None:
+    """Fail fast on route annotations FastAPI cannot resolve (see routing.runtime_signature).
+
+    Recurses into nested routers: FastAPI mounts ``include_router`` lazily, so a
+    nested router appears as a route holding ``original_router``.
+    """
+    for route in routes:
+        if isinstance(route, APIRoute):
+            runtime_signature(route.endpoint)
+        elif (nested := getattr(route, "original_router", None)) is not None:
+            _check_route_annotations(nested.routes)
+        elif isinstance(route, Mount):
+            _check_route_annotations(route.routes)

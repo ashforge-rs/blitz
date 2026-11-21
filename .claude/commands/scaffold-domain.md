@@ -1,247 +1,56 @@
-Scaffold a new domain using the four-layer monorepo pattern and wire it into the API service.
+Scaffold a new domain using the four-layer pattern and wire it into the API service.
 
 Arguments: $ARGUMENTS
 
-The argument is the domain name (e.g. `orders`, `users`, `billing`).  Use it as-is for the
-package name (lowercase, underscores).  Derive a PascalCase prefix for class names (e.g.
-`orders` → `Orders`, `user_profile` → `UserProfile`).
+The first argument is the domain name (snake_case, e.g. `orders`, `user_profiles`). An optional
+second argument is the PascalCase entity name; by default it is the singular of the domain name
+(`orders` → `Order`, `categories` → `Category`).
 
-See `src/domains/example/` for the canonical reference implementation.
+## 1. Generate
 
-## What to create
+Run the scaffold script — do not hand-write the files:
 
-### 1. Package skeleton
+```bash
+uv run python scripts/new_domain.py <name> [--entity <Entity>] [--service api]
+```
+
+It creates:
 
 ```
 src/domains/<name>/
-├── __init__.py       # empty
-├── models.py         # Pydantic entity + request models
-├── repository.py     # Data-access layer (depends on KeyValueStore protocol)
-├── service.py        # Business logic (depends on Repository)
-├── dependencies.py   # FastAPI Annotated dependency aliases
-└── domain.py         # Domain container + router + make_router() + bootstrap()
+├── models.py        # <Entity>, Create<Entity>Request, Update<Entity>Request
+├── errors.py        # <Entity>ErrorCode + <Entity>Error(DomainError) with code → HTTP status
+├── repository.py    # <Entity>Repository(store: KeyValueStore[str, <Entity>])
+├── service.py       # <Entity>Service — Result[T, <Entity>Error], audit on writes
+├── dependencies.py  # <Entity>ServiceDep
+└── domain.py        # <Plural>Domain (+ aclose), ResultRouter CRUD routes, make_router(), bootstrap()
+
+tests/domains/<name>/{unit,integration,fuzz}/   # passing test skeletons
 ```
 
-### 2. `src/domains/<name>/models.py`
-
-```python
-from pydantic import BaseModel
-
-
-class <Name>Item(BaseModel):
-    id: str
-    name: str
-    # add domain-specific fields here
-
-
-class Create<Name>ItemRequest(BaseModel):
-    name: str
-
-
-class Update<Name>ItemRequest(BaseModel):
-    name: str | None = None
-```
-
-### 3. `src/domains/<name>/repository.py`
-
-```python
-from typing import TYPE_CHECKING
-
-from .models import <Name>Item
-
-if TYPE_CHECKING:
-    from store.protocol import KeyValueStore
-
-
-class <Name>Repository:
-    def __init__(self, store: KeyValueStore[str, <Name>Item]) -> None:
-        self._store = store
-
-    async def find_by_id(self, item_id: str) -> <Name>Item | None:
-        return await self._store.get(item_id)
-
-    async def save(self, item: <Name>Item) -> <Name>Item:
-        await self._store.set(item.id, item)
-        return item
-
-    async def delete(self, item_id: str) -> bool:
-        return await self._store.delete(item_id)
-
-    async def find_all(self) -> list[<Name>Item]:
-        keys = await self._store.keys()
-        items = [await self._store.get(k) for k in keys]
-        return [i for i in items if i is not None]
-```
-
-### 4. `src/domains/<name>/service.py`
-
-```python
-import uuid
-from typing import TYPE_CHECKING
-
-from service import Service
-
-from .models import <Name>Item, Create<Name>ItemRequest, Update<Name>ItemRequest
-from .repository import <Name>Repository
-
-if TYPE_CHECKING:
-    from context import RequestContext
-
-
-class <Name>Service(Service):
-    def __init__(self, repository: <Name>Repository) -> None:
-        self._repo = repository
-
-    async def get(self, item_id: str, ctx: RequestContext) -> <Name>Item | None:
-        return await self._repo.find_by_id(item_id)
-
-    async def list_all(self, ctx: RequestContext) -> list[<Name>Item]:
-        return await self._repo.find_all()
-
-    async def create(self, request: Create<Name>ItemRequest, ctx: RequestContext) -> <Name>Item:
-        item = <Name>Item(id=str(uuid.uuid4()), name=request.name)
-        ctx.set("last_created_item_id", item.id)
-        return await self._repo.save(item)
-```
-
-### 5. `src/domains/<name>/dependencies.py`
-
-```python
-from typing import Annotated
-
-from fastapi import Depends, Request
-
-from context import RequestContext
-from state import get_domain
-
-from .service import <Name>Service
-
-
-def _get_<name>_service(request: Request) -> <Name>Service:
-    # Lazy import: domain.py imports this module.
-    from .domain import <Name>Domain
-
-    return get_domain(request, <Name>Domain).service
-
-
-def _get_ctx(request: Request) -> RequestContext:
-    ctx = request.state.ctx
-    if not isinstance(ctx, RequestContext):
-        msg = "request.state.ctx is missing — is RequestContextMiddleware installed?"
-        raise TypeError(msg)
-    return ctx
-
-
-<Name>ServiceDep = Annotated[<Name>Service, Depends(_get_<name>_service)]
-RequestContextDep = Annotated[RequestContext, Depends(_get_ctx)]
-```
-
-### 6. `src/domains/<name>/domain.py`
-
-```python
-from typing import TYPE_CHECKING
-
-from fastapi import APIRouter, HTTPException, status
-
-from store.memory import InMemoryStore
-
-from .dependencies import <Name>ServiceDep, RequestContextDep
-from .models import <Name>Item, Create<Name>ItemRequest
-from .repository import <Name>Repository
-from .service import <Name>Service
-
-if TYPE_CHECKING:
-    from config import Settings
-
-
-class <Name>Domain:
-    def __init__(self, service: <Name>Service) -> None:
-        self.service = service
-
-
-_router = APIRouter(prefix="/<name>", tags=["<name>"])
-
-
-@_router.get("/", response_model=list[<Name>Item])
-async def list_items(service: <Name>ServiceDep, ctx: RequestContextDep) -> list[<Name>Item]:
-    return await service.list_all(ctx)
-
-
-@_router.post("/", response_model=<Name>Item, status_code=status.HTTP_201_CREATED)
-async def create_item(
-    body: Create<Name>ItemRequest, service: <Name>ServiceDep, ctx: RequestContextDep
-) -> <Name>Item:
-    return await service.create(body, ctx)
-
-
-@_router.get("/{item_id}", response_model=<Name>Item)
-async def get_item(item_id: str, service: <Name>ServiceDep, ctx: RequestContextDep) -> <Name>Item:
-    item = await service.get(item_id, ctx)
-    if item is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    return item
-
-
-def make_router() -> APIRouter:
-    return _router
-
-
-async def bootstrap(settings: Settings, **kwargs) -> <Name>Domain:
-    store: InMemoryStore[str, <Name>Item] = InMemoryStore()
-    repository = <Name>Repository(store=store)
-    service = <Name>Service(repository=repository)
-    return <Name>Domain(service=service)
-```
-
-**Rules:**
-- `InMemoryStore` must only appear in `bootstrap()`, never in repo/service constructors
-- Domain key: always `"domains.<package>.<module>"` — e.g. `domains.orders.domain`
-- `make_router()` returns the module-level `_router`; never creates a new router per call
-- Every service method accepts `ctx: RequestContext` as its last parameter
-
-### 7. Wire into `src/services/api/main.py`
-
-Import the domain module and add it to `create_app()`:
-
-```python
-from domains.<name> import domain as <name>_domain
-
-app = create_app(settings=settings, domains=[example_domain, <name>_domain])
-```
-
-Append to the existing `domains=[...]` list rather than replacing it.
-
-### 8. Tests
-
-Create the full three-layer test suite:
-
-```
-tests/domains/<name>/
-├── __init__.py
-├── unit/
-│   ├── __init__.py
-│   └── test_service.py      # unit-test service methods with AsyncMock
-├── integration/
-│   ├── __init__.py
-│   └── test_routes.py       # HTTP route tests via asgi-lifespan client
-└── fuzz/
-    ├── __init__.py
-    └── test_fuzz.py          # Hypothesis @given property tests
-```
-
-Integration tests must use the `client` fixture from `tests/conftest.py` (or
-construct one with `asgi_lifespan.LifespanManager`) so `bootstrap()` runs before
-any request and `app.state.domains` is populated.
-
-## After scaffolding
-
-1. Run `uv run ruff check --fix src/ tests/ && uv run ruff format src/ tests/`
-2. Run `uv run pytest -v` — all existing tests must still pass plus the new ones
-3. Confirm the new route appears in the OpenAPI schema: `make dev` then `/docs`
-
-## Conventions
-
-- No `from __future__ import annotations` — Python 3.14+ evaluates annotations lazily (PEP 649)
-- Line length: 100 characters
-- Ruff only — no bare `except:`, always name the exception type
-- All domain imports inside the package must be relative (`from .models import ...`)
+and appends the module to `src/services/<service>/domains.py`. If the script refuses (name
+taken, invalid name), report that to the user instead of working around it.
+
+## 2. Customise
+
+Adapt the generated code to what the user described:
+
+- **Models** — replace the placeholder `name` field with the real fields and validators.
+- **Errors** — add codes (e.g. `CONFLICT`) and map each to a status in `STATUS`. 5xx codes
+  never expose their `message` to clients.
+- **Service** — add business rules. Keep every method returning `Result[T, <Entity>Error]` and
+  taking `ctx: RequestContext` last. Catch storage exceptions only at the repository call and
+  route them through `_storage_failure`.
+- **Routes** — keep handlers as thin delegates. `response_model` is inferred from
+  `Result[T, ...]`; shared deps (`RequestContextDep`, `SettingsDep`, …) come from `deps`.
+- **Bootstrap** — swap `InMemoryStore` for a real store here only; close it in `aclose()`.
+  Settings and extra resources are on `boot.settings` / `boot.extra`.
+- **Tests** — extend all three tiers to cover the new fields, rules and error codes.
+
+The rules the result must follow are in `AGENTS.md` (domain table, contract, gotchas).
+`src/domains/example/` is the fuller reference (OpenTelemetry spans, audit metadata).
+
+## 3. Verify
+
+1. `make verify` — format, lint, mypy and every test (old and new) must pass
+2. The routes appear under `/v1/<name-with-dashes>` in `/docs` (`make dev`)

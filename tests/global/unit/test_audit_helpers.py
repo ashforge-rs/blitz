@@ -4,7 +4,7 @@ from loguru import logger
 from audit.backend import AuditBackend, AuditEvent, AuditEventType, AuditResult, AuditSeverity
 from audit.backends.loguru import LoguruAuditBackend
 from audit.backends.multi import MultiAuditBackend
-from audit.helpers import log_auth_event, log_security_violation
+from audit.helpers import log_auth_event, log_operation, log_security_violation
 from audit.integrity import NoIntegrity
 
 
@@ -81,3 +81,39 @@ async def test_loguru_backend_level(event, level):
     (message,) = records
     assert message.record["level"].name == level
     assert message.record["extra"]["audit"] is True
+
+
+class _Ctx:
+    request_id = "req-1"
+    remote_addr = "192.0.2.1:1"
+    path = "/v1/orders"
+
+    def get(self, key, default=None):
+        return {"principal": "alice"}.get(key, default)
+
+
+@pytest.mark.parametrize(
+    ("result", "severity"),
+    [(AuditResult.SUCCESS, AuditSeverity.INFO), (AuditResult.FAILURE, AuditSeverity.WARNING)],
+)
+async def test_log_operation_fills_request_fields_from_ctx(result, severity):
+    backend = _Collector()
+    await log_operation(
+        backend,
+        NoIntegrity(),
+        _Ctx(),  # type: ignore[arg-type]
+        "orders.create",
+        result=result,
+        resource_id="o-1",
+        extra_metadata={"total": 3},
+    )
+    (event,) = backend.events
+    assert event.event_type == AuditEventType.ADMIN_ACTION
+    assert event.result == result
+    assert event.severity == severity
+    assert event.principal == "alice"
+    assert event.correlation_id == "req-1"
+    assert event.remote_addr == "192.0.2.1:1"
+    assert event.path == "/v1/orders"
+    assert event.method == "orders.create"
+    assert event.metadata == {"operation": "orders.create", "resource_id": "o-1", "total": 3}

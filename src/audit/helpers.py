@@ -19,7 +19,7 @@ Example::
     )
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from audit.backend import (
     AuditBackend,
@@ -29,6 +29,9 @@ from audit.backend import (
     AuditResult,
     AuditSeverity,
 )
+
+if TYPE_CHECKING:
+    from context import RequestContext
 
 
 async def log_security_violation(
@@ -132,6 +135,58 @@ async def log_auth_event(
         remote_addr=remote_addr,
         principal=principal,
         method=method,
+        metadata=metadata,
+    )
+    integrity.add_integrity(event)
+    await backend.log(event)
+
+
+async def log_operation(
+    backend: AuditBackend,
+    integrity: AuditIntegrity,
+    ctx: RequestContext,
+    operation: str,
+    *,
+    result: AuditResult = AuditResult.SUCCESS,
+    resource_id: str | None = None,
+    event_type: AuditEventType = AuditEventType.ADMIN_ACTION,
+    extra_metadata: dict[str, Any] | None = None,
+) -> None:
+    """
+    Emit an audit event for a state-changing domain operation.
+
+    Principal, client address, request ID and path are taken from *ctx*, so a
+    service only names the operation (e.g. ``"orders.create"``) and its outcome.
+    Non-success results are logged at ``WARNING`` severity.
+
+    Parameters
+    ----------
+    ctx:
+        The current :class:`~context.RequestContext`.
+    operation:
+        Dotted operation name, recorded as ``event.method`` and in metadata.
+    result:
+        Outcome of the operation; defaults to ``SUCCESS``.
+    resource_id:
+        Identifier of the affected record, recorded as ``metadata["resource_id"]``.
+    extra_metadata:
+        Additional key-value pairs merged into ``event.metadata``.
+    """
+    metadata: dict[str, Any] = {"operation": operation}
+    if resource_id is not None:
+        metadata["resource_id"] = resource_id
+    if extra_metadata:
+        metadata.update(extra_metadata)
+
+    event = AuditEvent(
+        event_type=event_type,
+        severity=AuditSeverity.INFO if result == AuditResult.SUCCESS else AuditSeverity.WARNING,
+        result=result,
+        principal=ctx.get("principal"),
+        remote_addr=ctx.remote_addr,
+        correlation_id=ctx.request_id,
+        method=operation,
+        path=ctx.path,
         metadata=metadata,
     )
     integrity.add_integrity(event)

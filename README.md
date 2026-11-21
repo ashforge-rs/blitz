@@ -51,7 +51,7 @@ src/
       main.py     # create_app() call + uvicorn entry point
       Dockerfile  # Per-service container image
 tests/
-  conftest.py     # Global fixtures (test_settings, app, client)
+  conftest.py     # Global fixtures (make_settings, make_app, make_client, app, client)
   global/         # Framework-level tests (no domain dependency)
     unit/         # InMemoryStore and other infrastructure unit tests
     integration/  # App-wide integration tests (middleware, auth, errors)
@@ -72,15 +72,13 @@ Each feature area follows a four-layer pattern:
 InMemoryStore  ->  Repository  ->  Service  ->  Domain (router + bootstrap)
 ```
 
-Register it in `src/services/api/main.py`:
+Scaffold one, with tests, and register it with the `api` service:
 
-```python
-from domains.orders import domain as orders_domain
-
-app = create_app(settings=settings, domains=[orders_domain])
+```bash
+make domain DOMAIN=orders        # entity: Order; routes at /v1/orders
 ```
 
-`bootstrap(settings)` is called once at startup; `make_router()` is called at application creation. See `src/domains/example/` for a complete working implementation.
+Registered domains are listed in `src/services/api/domains.py`. `make_router()` is called at application creation; `async bootstrap(boot)` is called once at startup and may return an instance with `aclose()` for shutdown. Services return `Result[T, DomainError]`, and `ResultRouter` maps failures to RFC 9457 responses. See `CLAUDE.md` for the contract and `src/domains/example/` for a complete working implementation.
 
 ---
 
@@ -93,6 +91,7 @@ All settings are read from environment variables or a `.env` file. See `.env.exa
 | `ENVIRONMENT`              | `development` | `development` / `production` / `test`               |
 | `LOG_LEVEL`                | `INFO`        | Loguru log level                                    |
 | `WORKERS`                  | `1`           | Uvicorn worker count                                |
+| `HOST` / `PORT`            | `127.0.0.1` / `8000` | Bind address for `python -m services.api.main` |
 | `RATE_LIMIT`               | `100/minute`  | Per-IP sliding window limit                         |
 | `REQUEST_TIMEOUT_SECONDS`  | `30.0`        | Per-request hard timeout                            |
 | `MAX_REQUEST_SIZE_BYTES`   | `10485760`    | 10 MB body limit                                    |
@@ -122,12 +121,23 @@ RFC 9457 Problem Details (`application/problem+json`) with `type`, `title`, `sta
 
 ---
 
+## Working with coding agents
+
+`AGENTS.md` is the single source of project rules for coding agents: commands, layout, the domain
+contract, common mistakes and test fixtures. `CLAUDE.md` imports it, and project skills and commands
+live in `.claude/`. Agents (and people) should finish with `make verify`.
+
+---
+
 ## Development commands
 
 | Command                 | Description                                                |
 | ----------------------- | ---------------------------------------------------------- |
 | `make install`          | Install all dependencies via `uv sync`                     |
-| `make dev`              | Start dev server with hot-reload (`services.api.main:app`) |
+| `make help`             | List every target                                          |
+| `make verify`           | Format check, lint, mypy and tests — changes nothing       |
+| `make dev`              | Start dev server with hot-reload (`SERVICE=api`, `PORT=8000`) |
+| `make domain DOMAIN=x`  | Scaffold a domain + tests and register it                  |
 | `make check`            | Format and lint with Ruff, then type-check with mypy       |
 | `make test`             | Run all tests                                              |
 | `make test-unit`        | Unit tests only (global + all domains)                     |
@@ -170,7 +180,7 @@ Coverage is enforced at 80 % in CI.
 
 ## Deployment
 
-A `Dockerfile` and `docker-compose.yml` are included. A Grafana dashboard with Prometheus data source is pre-configured under `grafana/`.
+Each service ships its own image definition (`src/services/<name>/Dockerfile`), and `docker-compose.yml` runs the `api` service with Prometheus and Grafana. A Grafana dashboard with Prometheus data source is pre-configured under `grafana/`.
 
 Set `ENVIRONMENT=production` to enable:
 

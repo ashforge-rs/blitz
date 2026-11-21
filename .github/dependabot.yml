@@ -66,9 +66,9 @@ updates:
       - "dependencies"
       - "github-actions"
 
-  # Base images in Dockerfile and src/services/*/Dockerfile (python, uv).
+  # Base images in src/services/*/Dockerfile (python, uv).
   - package-ecosystem: "docker"
-    directories: ["/", "/src/services/*"]
+    directories: ["/src/services/*"]
     schedule:
       interval: "weekly"
       day: "monday"

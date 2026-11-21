@@ -2,7 +2,7 @@ import json
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 
-from pydantic import BeforeValidator, SecretStr, field_validator, model_validator
+from pydantic import BeforeValidator, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -102,6 +102,11 @@ class Settings(BaseSettings):
 
     # Graceful shutdown
     SHUTDOWN_TIMEOUT_SECONDS: float = 30.0
+
+    # Bind address for `python -m services.<name>.main` (the Docker images run
+    # uvicorn directly and always listen on 0.0.0.0:8000).
+    HOST: str = "127.0.0.1"
+    PORT: int = Field(default=8000, ge=1, le=65535)
 
     # Server workers — set > 1 for multi-process production deployments.
     # Matches the WEB_CONCURRENCY convention used by Heroku / Railway / Fly.io.

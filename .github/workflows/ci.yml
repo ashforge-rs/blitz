@@ -70,10 +70,10 @@ jobs:
         run: uv sync --frozen # fails if uv.lock is out of date
 
       - name: Ruff format check
-        run: uv run ruff format --check src/ tests/
+        run: uv run ruff format --check src/ tests/ scripts/
 
       - name: Ruff lint
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check src/ tests/ scripts/
 
       - name: mypy
         run: uv run mypy src/
@@ -192,8 +192,8 @@ jobs:
           fi
 
           # ── Optional: add more global triggers here ────────────────────────
-          # e.g. rebuild everything when the root Dockerfile changes:
-          # if echo "$CHANGED" | grep -q '^Dockerfile$'; then GLOBAL_TRIGGER=true; fi
+          # e.g. rebuild everything when docker-compose.yml changes:
+          # if echo "$CHANGED" | grep -q '^docker-compose\.yml$'; then GLOBAL_TRIGGER=true; fi
 
           SERVICES_JSON="["
           FIRST=true
