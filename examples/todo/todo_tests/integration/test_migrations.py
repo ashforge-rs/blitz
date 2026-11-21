@@ -1,17 +1,15 @@
 """Migrations: each context's history builds exactly its tables, on every SQL backend."""
 
-from types import ModuleType
-
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, MetaData, inspect
 
-from todo_app.persistence import Database, alembic_config
-from todo_app.todos.adapters import sql_migrations as todos_migrations
+from todo_app.persistence import ContextMigrations, Database, alembic_config
+from todo_app.todos.adapters.sql_migrations import MIGRATIONS as todos_migrations
 from todo_app.todos.adapters.sql_tables import metadata as todos_metadata
-from todo_app.users.adapters import sql_migrations as users_migrations
+from todo_app.users.adapters.sql_migrations import MIGRATIONS as users_migrations
 from todo_app.users.adapters.sql_tables import metadata as users_metadata
 
 CONTEXTS = [
@@ -27,13 +25,13 @@ async def empty_db(backend_url: str) -> Database:
 
 @pytest.mark.parametrize(("migrations", "metadata"), CONTEXTS)
 async def test_migrations_at_head_match_the_table_definitions(
-    empty_db: Database, migrations: ModuleType, metadata: MetaData
+    empty_db: Database, migrations: ContextMigrations, metadata: MetaData
 ) -> None:
     await migrations.upgrade(empty_db)
 
     def diff(connection: Connection) -> list[object]:
         context = MigrationContext.configure(
-            connection, opts={"compare_type": True, "version_table": migrations.VERSION_TABLE}
+            connection, opts={"compare_type": True, "version_table": migrations.version_table}
         )
         return list(compare_metadata(context, metadata))
 
@@ -57,10 +55,10 @@ async def test_each_context_keeps_its_own_version_table(empty_db: Database) -> N
 
 @pytest.mark.parametrize(("migrations", "metadata"), CONTEXTS)
 async def test_downgrade_to_base_and_back_up(
-    empty_db: Database, migrations: ModuleType, metadata: MetaData
+    empty_db: Database, migrations: ContextMigrations, metadata: MetaData
 ) -> None:
     await migrations.upgrade(empty_db)
-    config = alembic_config(migrations.SCRIPT_LOCATION)
+    config = alembic_config(migrations.script_location)
 
     def downgrade(connection: Connection) -> None:
         config.attributes["connection"] = connection

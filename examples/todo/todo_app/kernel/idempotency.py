@@ -3,6 +3,10 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 #: How long a completed request can be replayed.  After that the key is free again.
 IDEMPOTENCY_TTL = timedelta(hours=24)
@@ -72,3 +76,15 @@ def fingerprint(*parts: str) -> str:
         encoded = part.encode()
         digest.update(len(encoded).to_bytes(4, "big") + encoded)
     return digest.hexdigest()
+
+
+async def retry_once_on_key_race[T](attempt: Callable[[], Awaitable[T]]) -> T:
+    """Run a unit of work; if a concurrent request committed the same key first, run it again.
+
+    The losing attempt rolled back, so the second run finds the winner's record
+    and replays its result.
+    """
+    try:
+        return await attempt()
+    except IdempotencyKeyTakenError:
+        return await attempt()

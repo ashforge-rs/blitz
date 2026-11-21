@@ -9,9 +9,9 @@ import os
 from sqlalchemy import text
 
 from todo_app.persistence import Database
-from todo_app.todos.adapters import sql_migrations as todos_migrations
+from todo_app.todos.adapters.sql_migrations import MIGRATIONS as todos_migrations
 from todo_app.todos.adapters.sql_tables import metadata as todos_metadata
-from todo_app.users.adapters import sql_migrations as users_migrations
+from todo_app.users.adapters.sql_migrations import MIGRATIONS as users_migrations
 from todo_app.users.adapters.sql_tables import metadata as users_metadata
 
 POSTGRES_URL = os.environ.get("TODO_TEST_POSTGRES_URL")
@@ -29,7 +29,7 @@ async def url_for(backend: str, sqlite_url: str) -> str:
     async with db.transaction() as conn:
         for metadata in (users_metadata, todos_metadata):
             await conn.run_sync(metadata.drop_all)
-        for version_table in (users_migrations.VERSION_TABLE, todos_migrations.VERSION_TABLE):
+        for version_table in (users_migrations.version_table, todos_migrations.version_table):
             await conn.execute(text(f"DROP TABLE IF EXISTS {version_table}"))
     await db.close()
     return POSTGRES_URL

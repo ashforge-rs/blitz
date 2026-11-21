@@ -1,17 +1,16 @@
 """Composition root of the users context, independent of any delivery mechanism.
 
-The only place that names the concrete classes (SQLite unit of work, outbox
-relay, telemetry, system clock).  The HTTP app (``domain.py``) and the CLI
-(``todo_app.cli``) both build the context through :func:`build_users`.
+The only place that names the users context's concrete classes.  The HTTP app
+(``domain.py``) and the CLI (``todo_app.cli``) both build it through :func:`build_users`.
 """
 
 from typing import TYPE_CHECKING
 
-from todo_app.kernel import StorageUnavailableError, SystemClock, Uuid7Ids
-from todo_app.persistence import Database, OutboxRelay
+from todo_app.kernel import SystemClock, Uuid7Ids
+from todo_app.persistence import open_context_runtime
 
-from .adapters import sql_migrations
 from .adapters.observed_user_telemetry import ObservedUserTelemetry
+from .adapters.sql_migrations import MIGRATIONS
 from .adapters.sql_tables import audit_outbox
 from .adapters.sql_users_unit_of_work import SqlUsersUnitOfWorkFactory
 from .use_cases import AuthenticateToken, RegisterUser
@@ -19,43 +18,29 @@ from .use_cases import AuthenticateToken, RegisterUser
 if TYPE_CHECKING:
     from audit.backend import AuditBackend, AuditIntegrity
 
+    from todo_app.persistence import ContextRuntime, OutboxRelay
     from todo_app.settings import TodoSettings
 
 
 class UsersDomain:
-    """The users context's use cases and the resources they hold."""
+    """The users context's use cases and the runtime (database, audit relay) behind them."""
 
     def __init__(
-        self,
-        *,
-        register: RegisterUser,
-        authenticate: AuthenticateToken,
-        relay: OutboxRelay,
-        db: Database,
+        self, *, register: RegisterUser, authenticate: AuthenticateToken, runtime: ContextRuntime
     ) -> None:
         self.register = register
         self.authenticate = authenticate
-        self.relay = relay
-        self._db = db
+        self._runtime = runtime
+
+    @property
+    def relay(self) -> OutboxRelay:
+        return self._runtime.relay
 
     async def health(self, *, max_outbox_age_s: float) -> dict[str, object]:
-        """For blitz's /health: the database answers and audit delivery keeps up."""
-        try:
-            backlog = await self.relay.backlog()
-        except StorageUnavailableError:
-            return {"name": "users", "healthy": False, "database": "unavailable"}
-        age = backlog.oldest_age_seconds
-        return {
-            "name": "users",
-            "healthy": age is None or age <= max_outbox_age_s,
-            "database": "ok",
-            "audit_outbox_pending": backlog.pending,
-            "audit_outbox_oldest_age_seconds": round(age or 0.0, 1),
-        }
+        return await self._runtime.health(max_outbox_age_s=max_outbox_age_s)
 
     async def aclose(self) -> None:
-        await self.relay.aclose()  # deliver what's pending before the connection goes
-        await self._db.close()
+        await self._runtime.aclose()
 
 
 async def build_users(
@@ -65,35 +50,20 @@ async def build_users(
     audit_integrity: AuditIntegrity,
     poll_outbox: bool = True,
 ) -> UsersDomain:
-    """Open the users context.  ``poll_outbox=False`` (short-lived processes such as
-    the CLI) delivers audit entries only when the context is closed."""
-    db = await Database.connect(
-        settings.DATABASE_URL.get_secret_value(),
-        busy_timeout_ms=settings.DB_BUSY_TIMEOUT_MS,
-        connect_timeout_s=settings.DB_CONNECT_TIMEOUT_SECONDS,
+    runtime = await open_context_runtime(
+        "users",
+        settings,
+        migrations=MIGRATIONS,
+        outbox=audit_outbox,
+        audit_backend=audit_backend,
+        audit_integrity=audit_integrity,
+        poll_outbox=poll_outbox,
     )
-    try:
-        if settings.DB_MIGRATE_ON_STARTUP:
-            await sql_migrations.upgrade(db)
-        else:
-            await sql_migrations.ensure_at_head(db)
-    except BaseException:
-        await db.close()
-        raise
-    uow = SqlUsersUnitOfWorkFactory(db)
+    uow = SqlUsersUnitOfWorkFactory(runtime.db)
     telemetry = ObservedUserTelemetry()
-    relay = OutboxRelay(
-        db,
-        audit_outbox,
-        audit_backend,
-        audit_integrity,
-        poll_interval=settings.OUTBOX_POLL_INTERVAL_SECONDS,
-    )
-    if poll_outbox:
-        relay.start()
+    clock, ids = SystemClock(), Uuid7Ids()
     return UsersDomain(
-        register=RegisterUser(uow, telemetry, clock=SystemClock(), ids=Uuid7Ids()),
+        register=RegisterUser(uow, telemetry, clock=clock, ids=ids),
         authenticate=AuthenticateToken(uow, telemetry),
-        relay=relay,
-        db=db,
+        runtime=runtime,
     )

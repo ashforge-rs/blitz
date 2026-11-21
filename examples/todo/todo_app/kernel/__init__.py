@@ -5,7 +5,7 @@ test in ``todo_tests/architecture``).
 """
 
 from .actor import Actor
-from .audit import AuditOutcome, AuditRecord, AuditTrail
+from .audit import AuditEntries, AuditOutcome, AuditRecord, AuditTrail
 from .clock import Clock, SystemClock
 from .errors import StorageUnavailableError
 from .idempotency import (
@@ -19,6 +19,7 @@ from .idempotency import (
     IdempotencyStore,
     fingerprint,
     is_valid_idempotency_key,
+    retry_once_on_key_race,
 )
 from .ids import IdGenerator, Uuid7Ids
 
@@ -28,6 +29,7 @@ __all__ = [
     "IDEMPOTENCY_KEY_PATTERN",
     "IDEMPOTENCY_TTL",
     "Actor",
+    "AuditEntries",
     "AuditOutcome",
     "AuditRecord",
     "AuditTrail",
@@ -42,4 +44,5 @@ __all__ = [
     "Uuid7Ids",
     "fingerprint",
     "is_valid_idempotency_key",
+    "retry_once_on_key_race",
 ]

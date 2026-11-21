@@ -4,21 +4,18 @@ from typing import TYPE_CHECKING
 from returns.result import Failure, Result, Success
 
 from todo_app.kernel import (
-    AuditOutcome,
-    AuditRecord,
+    AuditEntries,
     IdempotencyConflictError,
-    IdempotencyKeyTakenError,
     IdempotencyRecord,
     StorageUnavailableError,
     fingerprint,
+    retry_once_on_key_race,
 )
 from todo_app.todos.entities import Todo
 
 from .errors import TodoError, TodoErrorCode, todo_error
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from todo_app.kernel import Actor, Clock, IdGenerator
     from todo_app.todos.entities import Title
     from todo_app.todos.ports import TodosUnitOfWork, TodosUnitOfWorkFactory, TodoTelemetry
@@ -51,12 +48,17 @@ class CreateTodo:
         self._telemetry = telemetry
         self._clock = clock
         self._ids = ids
+        self._audit = AuditEntries(OPERATION, clock=clock, ids=ids)
 
     async def execute(
         self, owner_id: str, title: Title, actor: Actor, *, idempotency_key: str | None = None
     ) -> Result[TodoCreated, TodoError]:
+        async def attempt() -> TodoCreated:
+            async with self._uow() as uow:
+                return await self._create(uow, owner_id, title, actor, idempotency_key)
+
         try:
-            created = await self._attempt(owner_id, title, actor, idempotency_key)
+            created = await retry_once_on_key_race(attempt)
         except IdempotencyConflictError:
             return await self._reject(TodoErrorCode.IDEMPOTENCY_KEY_REUSED, actor)
         except StorageUnavailableError as exc:
@@ -65,18 +67,6 @@ class CreateTodo:
 
         await self._telemetry.created(created.todo, actor, replayed=created.replayed)
         return Success(created)
-
-    async def _attempt(
-        self, owner_id: str, title: Title, actor: Actor, idempotency_key: str | None
-    ) -> TodoCreated:
-        try:
-            async with self._uow() as uow:
-                return await self._create(uow, owner_id, title, actor, idempotency_key)
-        except IdempotencyKeyTakenError:
-            # A concurrent request with the same key committed first.  Ours rolled
-            # back; run again and replay its result.
-            async with self._uow() as uow:
-                return await self._create(uow, owner_id, title, actor, idempotency_key)
 
     async def _create(
         self,
@@ -104,7 +94,7 @@ class CreateTodo:
             id=self._ids.new_id(), owner_id=owner_id, title=title, done=False, created_at=now
         )
         await uow.todos.add(todo)
-        await uow.audit.record(self._audit(AuditOutcome.SUCCESS, actor, now, resource_id=todo.id))
+        await uow.audit.record(self._audit.success(actor, resource_id=todo.id))
         if idempotency_key is not None:
             await uow.idempotency.add(
                 IdempotencyRecord(
@@ -118,34 +108,12 @@ class CreateTodo:
         return TodoCreated(todo=todo)
 
     async def _reject(self, reason: TodoErrorCode, actor: Actor) -> Result[TodoCreated, TodoError]:
+        """Audit a refused creation in its own unit of work (the attempt rolled back)."""
         try:
             async with self._uow() as uow:
-                await uow.audit.record(
-                    self._audit(
-                        AuditOutcome.FAILURE, actor, self._clock.now(), details={"reason": reason}
-                    )
-                )
+                await uow.audit.record(self._audit.failure(actor, details={"reason": reason}))
         except StorageUnavailableError as exc:
             await self._telemetry.storage_failed(OPERATION, exc, actor)
             return Failure(todo_error(TodoErrorCode.STORAGE_ERROR))
         await self._telemetry.rejected(reason, actor)
         return Failure(todo_error(reason))
-
-    def _audit(
-        self,
-        outcome: AuditOutcome,
-        actor: Actor,
-        now: datetime,
-        *,
-        resource_id: str | None = None,
-        details: dict[str, str] | None = None,
-    ) -> AuditRecord:
-        return AuditRecord(
-            id=self._ids.new_id(),
-            operation=OPERATION,
-            outcome=outcome,
-            actor=actor,
-            occurred_at=now,
-            resource_id=resource_id,
-            details=details or {},
-        )
