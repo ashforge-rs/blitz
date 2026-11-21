@@ -1,11 +1,13 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from todo_app.kernel import IdempotencyKeyTakenError, IdempotencyRecord, IdempotencyStore
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from sqlalchemy import Table
     from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -47,6 +49,12 @@ class SqlIdempotencyStore(IdempotencyStore):
             .where(t.c.scope == record.scope, t.c.key == record.key)
             .values(**_values(record))
         )
+
+
+async def purge_expired(conn: AsyncConnection, table: Table, *, created_before: datetime) -> int:
+    """Delete records that can no longer be replayed; returns how many went."""
+    result = await conn.execute(delete(table).where(table.c.created_at < created_before))
+    return result.rowcount
 
 
 def _values(record: IdempotencyRecord) -> dict[str, object]:

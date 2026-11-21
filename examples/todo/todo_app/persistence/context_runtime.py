@@ -1,26 +1,64 @@
+import asyncio
+import contextlib
 from typing import TYPE_CHECKING
 
-from todo_app.kernel import StorageUnavailableError
+from loguru import logger
+
+from todo_app.kernel import IDEMPOTENCY_TTL, StorageUnavailableError, SystemClock
 
 from .database import Database
 from .outbox_relay import OutboxRelay
+from .sql_idempotency_store import purge_expired
 
 if TYPE_CHECKING:
     from audit.backend import AuditBackend, AuditIntegrity
     from sqlalchemy import Table
 
+    from todo_app.kernel import Clock
     from todo_app.settings import TodoSettings
 
     from .migrations import ContextMigrations
 
 
 class ContextRuntime:
-    """What every context holds at runtime: its database and its audit relay."""
+    """What every context holds at runtime: its database, audit relay and housekeeping."""
 
-    def __init__(self, *, name: str, db: Database, relay: OutboxRelay) -> None:
+    def __init__(
+        self,
+        *,
+        name: str,
+        db: Database,
+        relay: OutboxRelay,
+        idempotency: Table,
+        clock: Clock | None = None,
+    ) -> None:
         self.name = name
         self.db = db
         self.relay = relay
+        self._idempotency = idempotency
+        self._clock = clock or SystemClock()
+        self._housekeeping: asyncio.Task[None] | None = None
+
+    def start_housekeeping(self, interval_s: float) -> None:
+        """Purge expired idempotency records every ``interval_s`` (long-running processes)."""
+
+        async def _loop() -> None:
+            while True:
+                try:
+                    await self.purge_expired_idempotency()
+                except Exception as exc:  # noqa: BLE001 — a background task must not die
+                    logger.warning("idempotency.purge_failed", context=self.name, error=str(exc))
+                await asyncio.sleep(interval_s)
+
+        self._housekeeping = asyncio.create_task(_loop(), name=f"housekeeping:{self.name}")
+
+    async def purge_expired_idempotency(self) -> int:
+        cutoff = self._clock.now() - IDEMPOTENCY_TTL
+        async with self.db.transaction() as conn:
+            purged = await purge_expired(conn, self._idempotency, created_before=cutoff)
+        if purged:
+            logger.info("idempotency.purged", context=self.name, records=purged)
+        return purged
 
     async def health(self, *, max_outbox_age_s: float) -> dict[str, object]:
         """For blitz's /health: the database answers and audit delivery keeps up."""
@@ -38,6 +76,10 @@ class ContextRuntime:
         }
 
     async def aclose(self) -> None:
+        if self._housekeeping is not None:
+            self._housekeeping.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._housekeeping
         await self.relay.aclose()  # deliver what's pending before the connection goes
         await self.db.close()
 
@@ -48,6 +90,7 @@ async def open_context_runtime(
     *,
     migrations: ContextMigrations,
     outbox: Table,
+    idempotency: Table,
     audit_backend: AuditBackend,
     audit_integrity: AuditIntegrity,
     poll_outbox: bool,
@@ -55,7 +98,7 @@ async def open_context_runtime(
     """Connect, migrate (or check the schema is at head) and start the relay.
 
     ``poll_outbox=False`` (short-lived processes such as the CLI) delivers audit
-    entries only when the runtime is closed.
+    entries only when the runtime is closed and runs no housekeeping.
     """
     db = await Database.connect(
         settings.DATABASE_URL.get_secret_value(),
@@ -77,6 +120,8 @@ async def open_context_runtime(
         audit_integrity,
         poll_interval=settings.OUTBOX_POLL_INTERVAL_SECONDS,
     )
+    runtime = ContextRuntime(name=name, db=db, relay=relay, idempotency=idempotency)
     if poll_outbox:
         relay.start()
-    return ContextRuntime(name=name, db=db, relay=relay)
+        runtime.start_housekeeping(settings.IDEMPOTENCY_PURGE_INTERVAL_SECONDS)
+    return runtime

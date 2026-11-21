@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 from audit.backend import AuditEvent, AuditIntegrity, AuditResult
+from audit.integrity import SequenceIntegrity
 from sqlalchemy import func, select
 
 from todo_app.kernel import Actor, AuditOutcome, AuditRecord
@@ -150,3 +151,29 @@ async def test_close_makes_a_last_delivery_attempt(
     await relay.aclose()
 
     assert _ids(backend) == ["a1"]
+
+
+async def test_a_retried_delivery_keeps_integrity_sequence_numbers_gap_free(
+    db: Database, backend: RecordingAuditBackend
+) -> None:
+    relay = OutboxRelay(db, audit_outbox, backend, SequenceIntegrity())
+    await _commit(db, _entry("a1"), _entry("a2"))
+
+    backend.fail_with = OSError("audit sink down")
+    await relay.flush()  # a1 is prepared (sequence 1) but not accepted
+    backend.fail_with = None
+    await relay.flush()
+
+    assert [e.metadata["sequence"] for e in backend.events] == [1, 2]
+    assert _ids(backend) == ["a1", "a2"]
+
+
+async def test_events_carry_their_outbox_sequence(
+    db: Database, relay: OutboxRelay, backend: RecordingAuditBackend
+) -> None:
+    await _commit(db, _entry("a1"), _entry("a2"))
+
+    await relay.flush()
+
+    first, second = (int(str(e.metadata["outbox_seq"])) for e in backend.events)
+    assert second > first

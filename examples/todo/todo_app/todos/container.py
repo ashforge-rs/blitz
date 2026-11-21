@@ -7,7 +7,7 @@ from todo_app.persistence import open_context_runtime
 
 from .adapters.observed_todo_telemetry import ObservedTodoTelemetry
 from .adapters.sql_migrations import MIGRATIONS
-from .adapters.sql_tables import audit_outbox
+from .adapters.sql_tables import audit_outbox, idempotency
 from .adapters.sql_todos_unit_of_work import SqlTodosUnitOfWorkFactory
 from .use_cases import CreateTodo
 
@@ -48,6 +48,7 @@ async def build_todos(
         settings,
         migrations=MIGRATIONS,
         outbox=audit_outbox,
+        idempotency=idempotency,
         audit_backend=audit_backend,
         audit_integrity=audit_integrity,
         poll_outbox=poll_outbox,

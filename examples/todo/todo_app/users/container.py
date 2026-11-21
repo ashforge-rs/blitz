@@ -11,7 +11,7 @@ from todo_app.persistence import open_context_runtime
 
 from .adapters.observed_user_telemetry import ObservedUserTelemetry
 from .adapters.sql_migrations import MIGRATIONS
-from .adapters.sql_tables import audit_outbox
+from .adapters.sql_tables import audit_outbox, idempotency
 from .adapters.sql_users_unit_of_work import SqlUsersUnitOfWorkFactory
 from .use_cases import AuthenticateToken, RegisterUser
 
@@ -55,6 +55,7 @@ async def build_users(
         settings,
         migrations=MIGRATIONS,
         outbox=audit_outbox,
+        idempotency=idempotency,
         audit_backend=audit_backend,
         audit_integrity=audit_integrity,
         poll_outbox=poll_outbox,

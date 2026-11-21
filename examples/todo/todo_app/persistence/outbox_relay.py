@@ -99,6 +99,9 @@ class OutboxRelay:
         self._batch_size = batch_size
         self._clock = clock or SystemClock()
         self._flush_lock = asyncio.Lock()
+        #: Events prepared (integrity applied) but not yet accepted, by outbox seq.  A retry
+        #: sends the same event, so SequenceIntegrity numbers stay gap-free.
+        self._prepared: dict[int, AuditEvent] = {}
         self._task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
@@ -110,8 +113,7 @@ class OutboxRelay:
             delivered = 0
             while batch := await self._pending():
                 for row in batch:
-                    event = to_audit_event(_to_record(row))
-                    self._integrity.add_integrity(event)
+                    event = self._prepare(row)
                     try:
                         await self._backend.log(event)
                     except Exception as exc:  # noqa: BLE001 — keep the entry; retry next cycle
@@ -124,9 +126,19 @@ class OutboxRelay:
                         await conn.execute(
                             delete(self._table).where(self._table.c.seq == row["seq"])
                         )
+                    self._prepared.pop(row["seq"], None)
                     AUDIT_DELIVERED.labels(outbox=self._table.name).inc()
                     delivered += 1
             return delivered
+
+    def _prepare(self, row: RowMapping) -> AuditEvent:
+        seq: int = row["seq"]
+        if (event := self._prepared.get(seq)) is None:
+            event = to_audit_event(_to_record(row))
+            event.metadata["outbox_seq"] = seq  # stable per outbox: spots duplicates downstream
+            self._integrity.add_integrity(event)
+            self._prepared[seq] = event
+        return event
 
     async def backlog(self) -> Backlog:
         """What is waiting.  Also refreshes the backlog gauges."""
