@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from todo_app.kernel import SystemClock, Uuid7Ids
+from todo_app.kernel import StorageUnavailableError, SystemClock, Uuid7Ids
 from todo_app.persistence import Database, OutboxRelay
 
 from .adapters import sql_migrations
@@ -24,6 +24,21 @@ class TodosDomain:
         self.create = create
         self.relay = relay
         self._db = db
+
+    async def health(self, *, max_outbox_age_s: float) -> dict[str, object]:
+        """For blitz's /health: the database answers and audit delivery keeps up."""
+        try:
+            backlog = await self.relay.backlog()
+        except StorageUnavailableError:
+            return {"name": "todos", "healthy": False, "database": "unavailable"}
+        age = backlog.oldest_age_seconds
+        return {
+            "name": "todos",
+            "healthy": age is None or age <= max_outbox_age_s,
+            "database": "ok",
+            "audit_outbox_pending": backlog.pending,
+            "audit_outbox_oldest_age_seconds": round(age or 0.0, 1),
+        }
 
     async def aclose(self) -> None:
         await self.relay.aclose()  # deliver what's pending before the connection goes

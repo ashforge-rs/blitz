@@ -31,6 +31,8 @@ class TodoSettings(BaseSettings):
     #: Apply pending migrations when the app or CLI starts.  Convenient in development;
     #: in production set false and run ``todo db upgrade`` as a release step.
     DB_MIGRATE_ON_STARTUP: bool = True
+    #: /health turns unhealthy (503) when an audit entry has waited longer than this.
+    OUTBOX_MAX_AGE_SECONDS: float = Field(default=300, gt=0)
     #: How often the audit outbox relay looks for undelivered entries.
     OUTBOX_POLL_INTERVAL_SECONDS: float = Field(default=0.5, gt=0)
 

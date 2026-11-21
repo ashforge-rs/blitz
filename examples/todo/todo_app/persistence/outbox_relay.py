@@ -1,18 +1,50 @@
 import asyncio
 import contextlib
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from audit.backend import AuditEvent, AuditEventType, AuditResult, AuditSeverity
 from loguru import logger
-from sqlalchemy import delete, select
+from metrics import counter
+from prometheus_client import Gauge
+from sqlalchemy import delete, func, select
 
-from todo_app.kernel import Actor, AuditOutcome, AuditRecord
+from todo_app.kernel import Actor, AuditOutcome, AuditRecord, SystemClock
 
 if TYPE_CHECKING:
     from audit.backend import AuditBackend, AuditIntegrity
     from sqlalchemy import RowMapping, Table
 
+    from todo_app.kernel import Clock
+
     from .database import Database
+
+
+#: Undelivered entries per outbox; alert when the oldest grows (see grafana/alerts.yml).
+OUTBOX_PENDING = Gauge(
+    "todoapp_audit_outbox_pending", "Audit entries waiting for delivery", ["outbox"]
+)
+OUTBOX_OLDEST_AGE = Gauge(
+    "todoapp_audit_outbox_oldest_age_seconds",
+    "Age of the oldest undelivered audit entry (0 when the outbox is empty)",
+    ["outbox"],
+)
+AUDIT_DELIVERED = counter(
+    "todoapp_audit_delivered_total", "Audit entries delivered to the audit backend", ["outbox"]
+)
+AUDIT_DELIVERY_FAILURES = counter(
+    "todoapp_audit_delivery_failures_total",
+    "Failed attempts to deliver an audit entry (it stays in the outbox)",
+    ["outbox"],
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Backlog:
+    pending: int
+    #: ``None`` when nothing is pending.
+    oldest_age_seconds: float | None
 
 
 def to_audit_event(record: AuditRecord) -> AuditEvent:
@@ -57,6 +89,7 @@ class OutboxRelay:
         *,
         poll_interval: float = 0.5,
         batch_size: int = 100,
+        clock: Clock | None = None,
     ) -> None:
         self._db = db
         self._table = table
@@ -64,6 +97,7 @@ class OutboxRelay:
         self._integrity = integrity
         self._poll_interval = poll_interval
         self._batch_size = batch_size
+        self._clock = clock or SystemClock()
         self._flush_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
 
@@ -81,6 +115,7 @@ class OutboxRelay:
                     try:
                         await self._backend.log(event)
                     except Exception as exc:  # noqa: BLE001 — keep the entry; retry next cycle
+                        AUDIT_DELIVERY_FAILURES.labels(outbox=self._table.name).inc()
                         logger.warning(
                             "audit.outbox.delivery_failed", table=self._table.name, error=str(exc)
                         )
@@ -89,8 +124,28 @@ class OutboxRelay:
                         await conn.execute(
                             delete(self._table).where(self._table.c.seq == row["seq"])
                         )
+                    AUDIT_DELIVERED.labels(outbox=self._table.name).inc()
                     delivered += 1
             return delivered
+
+    async def backlog(self) -> Backlog:
+        """What is waiting.  Also refreshes the backlog gauges."""
+        t = self._table
+        async with self._db.transaction(read_only=True) as conn:
+            row = (
+                await conn.execute(select(func.count(), func.min(t.c.occurred_at)).select_from(t))
+            ).one()
+        pending, oldest = int(row[0]), row[1]
+        age = None
+        if oldest is not None:
+            if isinstance(oldest, str):  # SQLite's MIN() returns the stored text
+                oldest = datetime.fromisoformat(oldest)
+            if oldest.tzinfo is None:
+                oldest = oldest.replace(tzinfo=UTC)
+            age = max(0.0, (self._clock.now() - oldest).total_seconds())
+        OUTBOX_PENDING.labels(outbox=t.name).set(pending)
+        OUTBOX_OLDEST_AGE.labels(outbox=t.name).set(age or 0.0)
+        return Backlog(pending=pending, oldest_age_seconds=age)
 
     async def aclose(self) -> None:
         """Stop polling and make a last delivery attempt."""
@@ -109,6 +164,7 @@ class OutboxRelay:
         while True:
             try:
                 await self.flush()
+                await self.backlog()
             except Exception as exc:  # noqa: BLE001 — a background worker must not die
                 logger.error("audit.outbox.relay_error", table=self._table.name, error=str(exc))
             await asyncio.sleep(self._poll_interval)

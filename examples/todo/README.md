@@ -554,14 +554,37 @@ closing the connection.
 - **Housekeeping.** Expired idempotency records are overwritten when their key is reused, but
   never purged.
 
-## Metrics
+## Monitoring
 
 | Metric | Labels |
 | --- | --- |
-| `todoapp_users_registered_total` | `success`, `replayed`, `email_taken`, `idempotency_key_reused`, `error` |
-| `todoapp_users_storage_failures_total` | `operation` label: `users.register`, `users.authenticate` |
-| `todoapp_todos_created_total` | `success`, `replayed`, `idempotency_key_reused`, `error` |
-| `todoapp_auth_attempts_total` | `success`, `missing`, `invalid`, `error` |
+| `todoapp_users_registered_total` | `result`: `success`, `replayed`, `email_taken`, `idempotency_key_reused`, `error` |
+| `todoapp_users_storage_failures_total` | `operation`: `users.register`, `users.authenticate` |
+| `todoapp_todos_created_total` | `result`: `success`, `replayed`, `idempotency_key_reused`, `error` |
+| `todoapp_auth_attempts_total` | `result`: `success`, `missing`, `invalid`, `error` |
+| `todoapp_audit_outbox_pending` (gauge) | `outbox`: entries committed but not yet delivered |
+| `todoapp_audit_outbox_oldest_age_seconds` (gauge) | `outbox`: age of the oldest undelivered entry |
+| `todoapp_audit_delivered_total` / `_delivery_failures_total` | `outbox` |
+
+- **`/health`** reports each context (`users`, `todos`): whether its database answers, how many
+  audit entries are pending, and the age of the oldest. It returns **503** when a database is
+  down or an entry has waited longer than `TODO_OUTBOX_MAX_AGE_SECONDS` (default 300 s), so a
+  stuck relay takes the instance out of rotation instead of silently losing the audit trail's
+  freshness.
+- **Dashboard:** [`grafana/todo-dashboard.json`](grafana/todo-dashboard.json). It has blitz's HTTP
+  overview plus rows for users and auth, todos, and the audit outbox. Import it via Grafana →
+  Dashboards → Import, or drop it into the repository's `grafana/provisioning/dashboards/`.
+- **Alerts:** [`grafana/alerts.yml`](grafana/alerts.yml), as Prometheus rules:
+
+  | Alert | Fires when | Severity |
+  | --- | --- | --- |
+  | `AuditOutboxStale` | oldest audit entry is over 300 s old for 5 min | critical |
+  | `AuditDeliveryFailing` | every delivery attempt fails for 10 min | warning |
+  | `StorageUnavailable` | use cases fail with `storage_error` for 5 min | critical |
+  | `InvalidTokenSpike` | more than 20 % of auth attempts (and over 1/s) use unknown tokens | warning |
+
+  `todo_tests/integration/test_monitoring_assets.py` fails if either file queries a metric the
+  app doesn't export.
 
 ## Test
 
