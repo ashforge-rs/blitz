@@ -5,9 +5,9 @@ import json
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from audit.backend import AuditEvent, AuditEventType, AuditResult, AuditSeverity
 from loguru import logger
 
-from audit.backend import AuditEvent, AuditEventType, AuditResult, AuditSeverity
 from todo_app.kernel import Actor, AuditOutcome, AuditRecord
 
 from .sqlite_audit_outbox import checked_table

@@ -12,7 +12,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 SERVICE ?= api
-PY_DIRS := src/ tests/ scripts/ examples/
+PY_DIRS := src/ tests/ scripts/
 PORT    ?= 8000
 IMAGE   ?= ghcr.io/$(shell git config --get remote.origin.url | sed 's/.*github.com[:/]//' | sed 's/\.git$$//' | tr '[:upper:]' '[:lower:]')-$(SERVICE)
 
@@ -30,12 +30,12 @@ domain: ## Scaffold a domain + tests and register it (DOMAIN=orders [ENTITY=Orde
 		(echo "usage: make domain DOMAIN=<snake_case> [ENTITY=<PascalCase>] [SERVICE=api]" && exit 1)
 	uv run python scripts/new_domain.py $(DOMAIN) --service $(SERVICE) $(if $(ENTITY),--entity $(ENTITY))
 
-verify: ## Check everything without changing files: format, lint, types, tests
+verify: ## Check everything without changing files: format, lint, types, tests (+ examples/)
 	uv run ruff format --check $(PY_DIRS)
 	uv run ruff check $(PY_DIRS)
 	uv run mypy src/
-	MYPYPATH=examples/todo uv run mypy examples/todo
 	uv run pytest
+	$(MAKE) -C examples/todo verify
 
 lint: ## Run the Ruff linter
 	uv run ruff check $(PY_DIRS)

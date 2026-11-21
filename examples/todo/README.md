@@ -12,10 +12,13 @@ enforces the dependency rule (see [Enforced, not hoped for](#enforced-not-hoped-
 
 ## Run
 
-From the repository root:
+The example is its own uv project (own `pyproject.toml`, lock file and `.venv`), depending on
+blitz from this repository. From `examples/todo/`:
 
 ```bash
-PYTHONPATH=src:examples/todo uv run python -m todo_app
+make install        # uv sync
+make dev            # HTTP API with hot reload on :8000
+make verify         # format, lint, mypy --strict, tests (the root `make verify` runs it too)
 ```
 
 Settings are read from the environment or `.env`. See [`.env.example`](.env.example) for this
@@ -48,12 +51,11 @@ The same use cases without a web stack ([Typer](https://typer.tiangolo.com); a t
 CLI never imports FastAPI):
 
 ```bash
-export PYTHONPATH=src:examples/todo
-uv run python -m todo_app.cli register --email ada@example.com --name Ada
+uv run todo register --email ada@example.com --name Ada     # or: python -m todo_app.cli
 # {"api_token": "tdo_…", "replayed": false, "user": {"id": "…", "email": "ada@example.com", …}}
 
 export TODO_API_TOKEN=tdo_…      # never a flag: argv leaks into shell history and `ps`
-uv run python -m todo_app.cli create-todo --title "Buy milk" --idempotency-key "$(uuidgen)"
+uv run todo create-todo --title "Buy milk" --idempotency-key "$(uuidgen)"
 # {"replayed": false, "todo": {"id": "…", "owner_id": "…", "title": "Buy milk", …}}
 ```
 
@@ -127,6 +129,8 @@ package's `__init__.py` exports the public names (`from todo_app.users.entities 
 
 ```
 examples/todo/
+├── pyproject.toml                       # own project: blitz (by path) + typer, tool config
+├── Makefile                             # install · dev · verify · fmt · test · coverage
 ├── .env.example
 ├── conftest.py                          # fixtures: app/client on a temp DB, audit_log, db, metric
 ├── todo_app/
@@ -529,7 +533,7 @@ closing the connection.
 ## Test
 
 ```bash
-uv run pytest examples/todo
+make verify         # or just the tests: uv run pytest
 ```
 
 The tests come in four tiers: unit, integration, fuzz and architecture. Each test that needs a

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from errors.domain import DomainError
+
 from todo_app.users.use_cases import UserError, UserErrorCode
 
 

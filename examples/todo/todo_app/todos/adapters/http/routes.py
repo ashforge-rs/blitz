@@ -1,12 +1,12 @@
 from typing import Annotated
 
+from deps import RequestContextDep
 from fastapi import Depends, Request, Response, status
 from returns.pipeline import is_successful
 from returns.result import Result
-
-from deps import RequestContextDep
 from routing import ResultRouter
 from state import get_domain
+
 from todo_app.auth import CurrentPrincipalDep
 from todo_app.todos.container import TodosDomain
 from todo_app.todos.entities import Title

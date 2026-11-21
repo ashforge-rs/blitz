@@ -16,9 +16,8 @@ from .composition import open_services
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from loguru import Record
-
     from audit.backend import AuditBackend
+    from loguru import Record
 
     from .composition import Services
     from .exit_codes import ExitCode
@@ -116,5 +115,6 @@ def create_cli(
     return cli
 
 
-def main() -> None:
-    create_cli()(prog_name="python -m todo_app.cli")
+def main(prog_name: str | None = None) -> None:
+    """Entry point of the ``todo`` console script and of ``python -m todo_app.cli``."""
+    create_cli()(prog_name=prog_name)

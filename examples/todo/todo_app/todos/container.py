@@ -15,6 +15,7 @@ from .use_cases import CreateTodo
 
 if TYPE_CHECKING:
     from audit.backend import AuditBackend, AuditIntegrity
+
     from todo_app.settings import TodoSettings
 
 

@@ -1,8 +1,8 @@
 from typing import TYPE_CHECKING
 
+from errors.domain import DomainFailure
 from returns.pipeline import is_successful
 
-from errors.domain import DomainFailure
 from todo_app.auth.token_verifier import TokenVerifier
 from todo_app.users.use_cases import UserErrorCode
 

@@ -20,6 +20,7 @@ from .use_cases import AuthenticateToken, RegisterUser
 
 if TYPE_CHECKING:
     from audit.backend import AuditBackend, AuditIntegrity
+
     from todo_app.settings import TodoSettings
 
 

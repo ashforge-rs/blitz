@@ -86,6 +86,30 @@ jobs:
         run: uv audit --frozen --preview-features audit-command
 
   # ────────────────────────────────────────────────────────────────────────────
+  # example-todo — examples/todo is its own uv project (own lock and .venv);
+  # its Makefile runs format, lint, mypy --strict and the full test suite.
+  # ────────────────────────────────────────────────────────────────────────────
+  example-todo:
+    name: Example / todo
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/todo
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          python-version: ${{ env.PYTHON_PRIMARY }}
+
+      - name: Install dependencies
+        run: uv sync --frozen # fails if examples/todo/uv.lock is out of date
+
+      - name: Verify
+        run: make verify
+
+  # ────────────────────────────────────────────────────────────────────────────
   # test — pytest on a matrix of Python versions.
   #
   # Coverage is enforced at 80 %. Adjust --cov-fail-under or remove it to relax.

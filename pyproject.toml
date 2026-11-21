@@ -34,7 +34,6 @@ dev = [
   "asgi-lifespan>=2.1.0",
   "mypy>=2.4.1",
   "dirty-equals>=0.11",
-  "typer>=0.20", # examples/todo CLI (dev group: kept out of production images)
 ]
 
 [tool.uv]
@@ -53,7 +52,7 @@ sources = ["src"]
 exclude = ["**/Dockerfile"]
 
 [tool.ruff]
-src = ["src", "examples/todo"]
+src = ["src"]
 line-length = 100
 target-version = "py315"
 
@@ -96,8 +95,6 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests: no annotation requirements, allow commented examples, allow broad raises, allow assert
 "tests/**" = ["ANN", "ERA", "TRY", "EM", "PTH", "TCH", "S101"]
-"examples/todo/todo_tests/**" = ["ANN", "ERA", "TRY", "EM", "PTH", "TCH", "S101"]
-"examples/*/conftest.py" = ["ANN", "ERA", "TRY", "EM", "PTH", "TCH", "S101"]
 # FastAPI resolves route/dependency/handler annotations at runtime, so their
 # imports must stay real imports (not TYPE_CHECKING-only).
 "src/routes/**" = ["TC"]
@@ -109,16 +106,13 @@ ignore = [
 # reads `-> Result[T, E]` return annotations at runtime.
 "src/domains/*/domain.py" = ["TC"]
 "src/domains/*/dependencies.py" = ["TC"]
-"examples/**/domain.py" = ["TC"]
-"examples/**/adapters/http/*.py" = ["TC"]
-"examples/todo/todo_app/auth/*.py" = ["TC"]
 # Code templates: line length is only known after substitution (ruff formats the output).
 "scripts/new_domain.py" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["tests", "examples"]
+testpaths = ["tests"]
 pythonpath = ["src"]
 # --strict-markers / --strict-config: typos in marks or config keys are errors.
 addopts = "-q --no-header --strict-markers --strict-config"

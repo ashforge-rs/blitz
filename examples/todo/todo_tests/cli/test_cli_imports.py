@@ -5,20 +5,13 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
-
-EXAMPLE = Path(__file__).resolve().parents[2]  # examples/todo
-SRC = EXAMPLE.parents[1] / "src"
 
 WEB = ("fastapi", "starlette", "uvicorn", "httpx", "todo_app.web", "todo_app.auth", "routing")
 
 
 def _run_cli(db_path: str, *args: str) -> subprocess.CompletedProcess[str]:
-    env = {
-        "PATH": os.environ.get("PATH", ""),
-        "PYTHONPATH": f"{SRC}{os.pathsep}{EXAMPLE}",
-        "TODO_DB_PATH": db_path,
-    }
+    # No PYTHONPATH: the installed package must run on its own.
+    env = {"PATH": os.environ.get("PATH", ""), "TODO_DB_PATH": db_path}
     return subprocess.run(  # noqa: S603 — fixed arguments, our own interpreter
         [sys.executable, "-X", "importtime", "-m", "todo_app.cli", *args],
         capture_output=True,

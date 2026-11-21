@@ -1,9 +1,9 @@
 """Audit entries are committed with the change they describe, then delivered by the relay."""
 
 import pytest
+from audit.backend import AuditResult
 from httpx import AsyncClient
 
-from audit.backend import AuditResult
 from todo_app.kernel import StorageUnavailableError
 from todo_app.users.adapters.sqlite_user_repository import SqliteUserRepository
 from todo_tests.fakes import RecordingAuditBackend

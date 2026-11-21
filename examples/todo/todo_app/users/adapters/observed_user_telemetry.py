@@ -7,8 +7,8 @@ entries carry the user id only.
 from typing import TYPE_CHECKING
 
 from loguru import logger
-
 from metrics import counter
+
 from todo_app.users.ports import UserTelemetry
 
 if TYPE_CHECKING:

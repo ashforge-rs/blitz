@@ -3,8 +3,8 @@
 from typing import TYPE_CHECKING
 
 from loguru import logger
-
 from metrics import counter
+
 from todo_app.todos.ports import TodoTelemetry
 
 if TYPE_CHECKING:

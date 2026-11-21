@@ -3,8 +3,8 @@
 import asyncio
 
 import pytest
-
 from audit.backend import AuditEvent, AuditIntegrity, AuditResult
+
 from todo_app.kernel import Actor, AuditOutcome, AuditRecord
 from todo_app.persistence import Database, OutboxRelay
 from todo_app.users.adapters.sqlite_users_unit_of_work import (

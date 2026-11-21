@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from audit.backends.loguru import LoguruAuditBackend
 from audit.integrity import NoIntegrity
+
 from todo_app.todos.container import TodosDomain, build_todos
 from todo_app.users.container import UsersDomain, build_users
 
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from audit.backend import AuditBackend, AuditIntegrity
+
     from todo_app.settings import TodoSettings
 
 

@@ -1,3 +1,3 @@
 from .main import main
 
-main()
+main(prog_name="python -m todo_app.cli")

@@ -1,8 +1,7 @@
 from typing import Annotated, Any
 
-from fastapi import Depends
-
 from auth.dependency import get_auth_context
+from fastapi import Depends
 
 from .principal import Principal
 

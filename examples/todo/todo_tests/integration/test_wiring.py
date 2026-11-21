@@ -3,11 +3,11 @@
 from unittest.mock import MagicMock
 
 import pytest
-
 from audit.backends.noop import NoopAuditBackend
 from audit.integrity import NoIntegrity
 from bootstrap import BootstrapContext
 from config import Settings
+
 from todo_app.auth.dependencies import current_principal
 from todo_app.settings import from_boot
 

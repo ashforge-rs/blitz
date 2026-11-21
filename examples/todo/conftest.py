@@ -1,4 +1,4 @@
-"""Shared fixtures.  This file sits at the example root so pytest puts it on sys.path."""
+"""Shared fixtures for every test tier."""
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 from asgi_lifespan import LifespanManager
+from config import Settings
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from prometheus_client import REGISTRY
 
-from config import Settings
 from todo_app.factory import create_todo_app
 from todo_app.persistence import Database
 from todo_app.settings import TodoSettings

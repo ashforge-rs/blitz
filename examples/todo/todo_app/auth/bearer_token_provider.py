@@ -1,10 +1,10 @@
 from typing import TYPE_CHECKING, Any
 
-from fastapi import Request
-
 from context import RequestContext
 from deps import get_request_context
+from fastapi import Request
 from metrics import counter
+
 from todo_app.web import request_actor
 
 from .principal import Principal

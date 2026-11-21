@@ -16,9 +16,8 @@ from .users.container import UsersDomain
 if TYPE_CHECKING:
     import types
 
-    from fastapi import FastAPI, Request
-
     from config import Settings
+    from fastapi import FastAPI, Request
 
 DOMAINS: list[types.ModuleType] = [users_domain, todos_domain]
 
