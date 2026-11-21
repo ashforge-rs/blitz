@@ -5,7 +5,7 @@ from audit.backend import AuditResult
 from httpx import AsyncClient
 
 from todo_app.kernel import StorageUnavailableError
-from todo_app.users.adapters.sqlite_user_repository import SqliteUserRepository
+from todo_app.users.adapters.sql_user_repository import SqlUserRepository
 from todo_tests.fakes import RecordingAuditBackend
 from todo_tests.fixture_types import FlushAudit, Metric, RegisterUser
 
@@ -90,10 +90,10 @@ async def test_audit_outage_neither_fails_nor_loses_a_registration(
 async def test_storage_outage_is_a_500_storage_error_and_counted(
     client: AsyncClient, metric: Metric, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def unavailable(self: SqliteUserRepository, user: object) -> None:
+    async def unavailable(self: SqlUserRepository, user: object) -> None:
         raise StorageUnavailableError("disk I/O error")
 
-    monkeypatch.setattr(SqliteUserRepository, "add", unavailable)
+    monkeypatch.setattr(SqlUserRepository, "add", unavailable)
     before = metric("todoapp_users_registered_total", result="error")
 
     r = await client.post("/v1/users/", json={"email": "ada@example.com", "name": "Ada"})
@@ -107,10 +107,10 @@ async def test_storage_outage_is_a_500_storage_error_and_counted(
 async def test_a_bug_surfaces_as_a_plain_500_not_a_storage_error(
     client: AsyncClient, metric: Metric, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def buggy(self: SqliteUserRepository, user: object) -> None:
+    async def buggy(self: SqlUserRepository, user: object) -> None:
         raise TypeError("adapter bug")
 
-    monkeypatch.setattr(SqliteUserRepository, "add", buggy)
+    monkeypatch.setattr(SqlUserRepository, "add", buggy)
     before = metric("todoapp_users_registered_total", result="error")
 
     r = await client.post("/v1/users/", json={"email": "ada@example.com", "name": "Ada"})

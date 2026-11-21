@@ -1,17 +1,25 @@
-"""SQLite infrastructure shared by the contexts' adapters."""
+"""SQL infrastructure shared by the contexts' adapters (SQLAlchemy Core, async)."""
 
-from .database import Database, Transaction
+from .database import Database
+from .migrations import SchemaOutOfDateError, alembic_config, ensure_at_head, upgrade
 from .outbox_relay import OutboxRelay, to_audit_event
-from .sqlite_audit_outbox import SqliteAuditOutbox, outbox_migrations
-from .sqlite_idempotency_store import SqliteIdempotencyStore, idempotency_migrations
+from .sql_audit_outbox import SqlAuditOutbox
+from .sql_idempotency_store import SqlIdempotencyStore
+from .tables import context_metadata, idempotency_table, outbox_table
+from .types import UtcDateTime
 
 __all__ = [
     "Database",
     "OutboxRelay",
-    "SqliteAuditOutbox",
-    "SqliteIdempotencyStore",
-    "Transaction",
-    "idempotency_migrations",
-    "outbox_migrations",
+    "SchemaOutOfDateError",
+    "SqlAuditOutbox",
+    "SqlIdempotencyStore",
+    "UtcDateTime",
+    "alembic_config",
+    "context_metadata",
+    "ensure_at_head",
+    "idempotency_table",
+    "outbox_table",
     "to_audit_event",
+    "upgrade",
 ]

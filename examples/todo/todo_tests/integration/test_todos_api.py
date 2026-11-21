@@ -1,3 +1,4 @@
+import asyncio
 import sqlite3
 from contextlib import closing
 
@@ -5,7 +6,7 @@ import pytest
 from httpx import AsyncClient
 
 from todo_app.kernel import StorageUnavailableError
-from todo_app.users.adapters.sqlite_user_repository import SqliteUserRepository
+from todo_app.users.adapters.sql_user_repository import SqlUserRepository
 from todo_tests.fixture_types import RegisterUser
 
 
@@ -72,10 +73,10 @@ async def test_auth_storage_outage_is_500_not_401(
 ) -> None:
     ada = await register_user()
 
-    async def broken(self: SqliteUserRepository, token_hash: str) -> None:
+    async def broken(self: SqlUserRepository, token_hash: str) -> None:
         raise StorageUnavailableError("database is locked")
 
-    monkeypatch.setattr(SqliteUserRepository, "find_by_token_hash", broken)
+    monkeypatch.setattr(SqlUserRepository, "find_by_token_hash", broken)
 
     r = await client.post("/v1/todos/", json={"title": "Buy milk"}, headers=_auth(ada["api_token"]))
 
@@ -130,3 +131,20 @@ async def test_another_users_key_never_replays_my_todo(
 
     assert theirs.json()["id"] != mine.json()["id"]
     assert theirs.json()["owner_id"] == bob["user"]["id"]
+
+
+async def test_concurrent_retries_with_one_key_create_one_todo(
+    client: AsyncClient, register_user: RegisterUser, db_path: str
+) -> None:
+    ada = await register_user()
+    headers = _auth(ada["api_token"]) | {"Idempotency-Key": "race-key-0001"}
+
+    responses = await asyncio.gather(
+        *(client.post("/v1/todos/", json={"title": "Buy milk"}, headers=headers) for _ in range(5))
+    )
+
+    assert {r.status_code for r in responses} == {201}
+    assert len({r.json()["id"] for r in responses}) == 1
+    assert sum("idempotent-replayed" in r.headers for r in responses) == 4
+    with closing(sqlite3.connect(db_path)) as conn:
+        assert conn.execute("SELECT count(*) FROM todos").fetchone() == (1,)

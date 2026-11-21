@@ -1,6 +1,7 @@
 """Typer entry point: parses the command line, runs one command, exits with its code."""
 
 import asyncio
+import json
 import os
 import sys
 from typing import TYPE_CHECKING, Annotated
@@ -8,10 +9,12 @@ from typing import TYPE_CHECKING, Annotated
 import typer
 from loguru import logger
 
+from todo_app.persistence import SchemaOutOfDateError
 from todo_app.settings import TodoSettings
 
 from . import commands
-from .composition import open_services
+from .composition import migrate_all, open_services
+from .exit_codes import ExitCode
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -20,7 +23,6 @@ if TYPE_CHECKING:
     from loguru import Record
 
     from .composition import Services
-    from .exit_codes import ExitCode
 
 #: blitz's LoguruAuditBackend writes audit events through loguru under this name.
 _AUDIT_LOGGER = "audit.backends.loguru"
@@ -69,10 +71,14 @@ def create_cli(
 
     def run(command: Callable[[Services, commands.Console], Awaitable[ExitCode]]) -> None:
         async def _with_services() -> ExitCode:
-            async with open_services(
-                settings or TodoSettings(), audit_backend=audit_backend
-            ) as services:
-                return await command(services, commands.Console())
+            console = commands.Console()
+            try:
+                async with open_services(
+                    settings or TodoSettings(), audit_backend=audit_backend
+                ) as services:
+                    return await command(services, console)
+            except SchemaOutOfDateError as exc:
+                return console.error("schema_out_of_date", str(exc), ExitCode.CONFIG)
 
         raise typer.Exit(asyncio.run(_with_services()))
 
@@ -111,6 +117,19 @@ def create_cli(
                 services, console, title=title, idempotency_key=idempotency_key, token=token
             )
         )
+
+    db = typer.Typer(help="Database maintenance.", no_args_is_help=True)
+    cli.add_typer(db, name="db")
+
+    @db.command("upgrade")
+    def upgrade() -> None:
+        """Apply pending migrations for every context (a release step in production)."""
+
+        async def _upgrade() -> None:
+            await migrate_all(settings or TodoSettings())
+
+        asyncio.run(_upgrade())
+        typer.echo(json.dumps({"migrated": ["users", "todos"]}))
 
     return cli
 

@@ -1,7 +1,15 @@
+from dataclasses import replace
+
 import pytest
 
-from todo_app.kernel import IDEMPOTENCY_TTL, Actor, AuditOutcome, StorageUnavailableError
-from todo_app.users.entities import DisplayName, EmailAddress, hash_token
+from todo_app.kernel import (
+    IDEMPOTENCY_TTL,
+    Actor,
+    AuditOutcome,
+    IdempotencyRecord,
+    StorageUnavailableError,
+)
+from todo_app.users.entities import DisplayName, EmailAddress, User, hash_token
 from todo_app.users.use_cases import RegisterUser, UserErrorCode
 from todo_tests.fakes import (
     EPOCH,
@@ -9,6 +17,7 @@ from todo_tests.fakes import (
     InMemoryUsersUnitOfWorkFactory,
     UserTelemetryRecorder,
 )
+from todo_tests.fakes.in_memory_users_unit_of_work import UsersState
 
 ADA = EmailAddress("ada@example.com")
 NAME = DisplayName("Ada")
@@ -123,3 +132,27 @@ async def test_a_bug_is_not_disguised_as_a_storage_error(
 
     with pytest.raises(TypeError, match="bug in an adapter"):
         await register.execute(ADA, NAME, actor)
+
+
+async def test_a_lost_key_race_returns_the_winner_with_a_fresh_token(
+    register: RegisterUser, users_uow: InMemoryUsersUnitOfWorkFactory, actor: Actor
+) -> None:
+    winner = User(id="winner", email=ADA, name=NAME, created_at=EPOCH)
+
+    def concurrent_request(state: UsersState, ours: IdempotencyRecord) -> None:
+        state.users[winner.id] = winner
+        state.tokens["winner-hash"] = winner.id
+        state.idempotency[(ours.scope, ours.key)] = replace(
+            ours,
+            resource_id=winner.id,
+            secret_ref="winner-hash",  # noqa: S106 — a test value
+        )
+
+    users_uow.concurrent_commit = concurrent_request
+
+    registration = (await register.execute(ADA, NAME, actor, idempotency_key=KEY)).unwrap()
+
+    assert registration.replayed is True
+    assert registration.user == winner
+    assert users_uow.state.users == {"winner": winner}  # our attempt rolled back
+    assert users_uow.state.tokens == {hash_token(registration.api_token): "winner"}

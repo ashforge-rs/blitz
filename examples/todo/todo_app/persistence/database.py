@@ -1,168 +1,98 @@
-import asyncio
-import sqlite3
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+import contextlib
 from typing import TYPE_CHECKING, Any, Self
+
+from sqlalchemy import event, text
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from todo_app.kernel import StorageUnavailableError
 
+from .errors import translate_storage_errors
+
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterable
-
-
-#: SQLite result codes (and their extended variants, e.g. SQLITE_IOERR_WRITE) that mean
-#: "storage can't serve this right now", as opposed to a bug or a constraint violation.
-_UNAVAILABLE = (
-    "SQLITE_BUSY",
-    "SQLITE_LOCKED",
-    "SQLITE_IOERR",
-    "SQLITE_FULL",
-    "SQLITE_CANTOPEN",
-    "SQLITE_READONLY",
-    "SQLITE_CORRUPT",
-    "SQLITE_NOTADB",
-    "SQLITE_PROTOCOL",
-    "SQLITE_NOMEM",
-    "SQLITE_INTERRUPT",
-)
+    from collections.abc import AsyncIterator
 
 
 class Database:
-    """One SQLite connection, used from async code through explicit transactions.
+    """An async SQLAlchemy engine with the transaction semantics the units of work need.
 
-    ``sqlite3`` blocks, so every statement runs on a single dedicated worker
-    thread: statements run in submission order and the connection never changes
-    threads.  :meth:`transaction` holds a lock for its whole duration, so one
-    unit of work can span several awaits without another request's statements
-    landing inside it.
-
-    Error contract: storage failures (locked, busy, disk I/O, full, closed) are
-    raised as :class:`~todo_app.kernel.StorageUnavailableError`.  Everything
-    else (constraint violations, SQL errors) propagates unchanged: it is for the
-    caller to translate, or it is a bug.
+    - :meth:`transaction` is one database transaction on its own pooled
+      connection: committed when the block completes, rolled back when it
+      raises or is cancelled.  ``read_only=True`` always rolls back.
+    - Errors follow ``persistence.errors``: outages become
+      ``StorageUnavailableError``; constraint violations and SQL errors propagate.
+    - SQLite: writes take the write lock up front (``BEGIN IMMEDIATE``), so two
+      connections can't deadlock upgrading read locks.  Foreign keys are on and
+      the journal is WAL.  Postgres: read-only transactions are ``READ ONLY``.
     """
 
-    def __init__(self, conn: sqlite3.Connection, executor: ThreadPoolExecutor) -> None:
-        self._conn = conn
-        self._executor = executor
-        self._lock = asyncio.Lock()
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
         self._closed = False
 
     @classmethod
     async def connect(
-        cls,
-        path: str,
-        *,
-        migrations: Iterable[str] = (),
-        busy_timeout_ms: int = 5_000,
+        cls, url: str, *, busy_timeout_ms: int = 5_000, connect_timeout_s: float = 5.0
     ) -> Self:
-        """Open ``path``, apply ``migrations`` in one transaction and return the database.
+        """Create the engine and check the database answers.
 
-        Migrations must be idempotent (``CREATE ... IF NOT EXISTS``); they run on
-        every start.  A real project would version them (Alembic, yoyo).
+        ``connect_timeout_s`` bounds both opening a connection and waiting for a
+        free one in the pool: an unreachable database fails fast as
+        ``StorageUnavailableError`` instead of hanging each request.
         """
-        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sqlite")
-
-        def _open() -> sqlite3.Connection:
-            # isolation_level=None: no implicit transactions; we issue BEGIN/COMMIT.
-            conn = sqlite3.connect(path, timeout=busy_timeout_ms / 1000, isolation_level=None)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON")
-            # WAL lets readers proceed while a write is in progress.
-            conn.execute("PRAGMA journal_mode = WAL")
-            return conn
-
+        if url.startswith("sqlite"):
+            engine = create_async_engine(url)
+            _configure_sqlite(engine, busy_timeout_ms)
+        else:
+            engine = create_async_engine(
+                url,
+                connect_args={"timeout": connect_timeout_s},
+                pool_timeout=connect_timeout_s,
+                pool_pre_ping=True,  # a connection the server dropped is replaced, not used
+            )
+        db = cls(engine)
         try:
-            conn = await asyncio.get_running_loop().run_in_executor(executor, _open)
+            async with db.transaction(read_only=True) as conn:
+                await conn.execute(text("SELECT 1"))
         except BaseException:
-            executor.shutdown(wait=False)
-            raise
-
-        db = cls(conn, executor)
-        try:
-            async with db.transaction() as tx:
-                await tx.execute(lambda conn: _apply(conn, migrations))
-        except BaseException:
-            await db.close()
+            await engine.dispose()
             raise
         return db
 
-    @asynccontextmanager
-    async def transaction(self, *, write: bool = True) -> AsyncIterator[Transaction]:
-        """One atomic unit of work: committed if the block completes, rolled back otherwise.
+    @property
+    def dialect(self) -> str:
+        return self._engine.dialect.name
 
-        ``write=True`` takes SQLite's write lock up front (``BEGIN IMMEDIATE``), so
-        two connections can't deadlock upgrading read locks.  ``write=False``
-        always ends in ``ROLLBACK``.
-        """
-        async with self._lock:
-            await self._call(self._conn.execute, "BEGIN IMMEDIATE" if write else "BEGIN")
-            tx = Transaction(self)
-            try:
-                yield tx
-                # A read-only transaction never persists anything, even if written to.
-                await self._call(self._conn.execute, "COMMIT" if write else "ROLLBACK")
-            except BaseException:
-                # Shielded: a cancelled request still rolls back.  The worker runs
-                # jobs in order, so this lands before the next transaction's BEGIN
-                # even if the shield itself is cancelled.
-                await asyncio.shield(self._submit(self._rollback_if_open))
-                raise
-            finally:
-                tx.close()
-
-    async def query[T](self, work: Callable[[sqlite3.Connection], T]) -> T:
-        """Run a read in its own (deferred) transaction."""
-        async with self.transaction(write=False) as tx:
-            return await tx.execute(work)
-
-    async def close(self) -> None:
-        async with self._lock:
-            if self._closed:
-                return
-            self._closed = True
-            await self._submit(self._conn.close)
-            self._executor.shutdown(wait=False)
-
-    async def _call[T](self, fn: Callable[..., T], *args: Any) -> T:
+    @contextlib.asynccontextmanager
+    async def transaction(self, *, read_only: bool = False) -> AsyncIterator[AsyncConnection]:
         if self._closed:
             msg = "database is closed"
             raise StorageUnavailableError(msg)
-        try:
-            return await self._submit(fn, *args)
-        except sqlite3.DatabaseError as exc:
-            # By SQLite result code, not exception class: OperationalError also
-            # covers syntax errors and missing tables, which are bugs.
-            if (getattr(exc, "sqlite_errorname", None) or "").startswith(_UNAVAILABLE):
-                raise StorageUnavailableError(str(exc)) from exc
-            raise
+        with translate_storage_errors():
+            async with self._engine.connect() as conn:
+                if read_only:
+                    await conn.execution_options(read_only=True, postgresql_readonly=True)
+                async with conn.begin():
+                    yield conn
+                    if read_only:
+                        await conn.rollback()
 
-    def _submit[T](self, fn: Callable[..., T], *args: Any) -> asyncio.Future[T]:
-        return asyncio.get_running_loop().run_in_executor(self._executor, fn, *args)
-
-    def _rollback_if_open(self) -> None:
-        if self._conn.in_transaction:
-            self._conn.execute("ROLLBACK")
+    async def close(self) -> None:
+        self._closed = True
+        await self._engine.dispose()
 
 
-def _apply(conn: sqlite3.Connection, statements: Iterable[str]) -> None:
-    for statement in statements:
-        conn.execute(statement)
+def _configure_sqlite(engine: AsyncEngine, busy_timeout_ms: int) -> None:
+    @event.listens_for(engine.sync_engine, "connect")
+    def _on_connect(dbapi_connection: Any, _record: Any) -> None:
+        # No implicit transactions from the driver: the "begin" hook below decides.
+        dbapi_connection.isolation_level = None
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys = ON")
+        cursor.execute("PRAGMA journal_mode = WAL")
+        cursor.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
+        cursor.close()
 
-
-class Transaction:
-    """Handle to the open transaction; valid only inside ``async with db.transaction()``."""
-
-    def __init__(self, db: Database) -> None:
-        self._db = db
-        self._open = True
-
-    async def execute[T](self, work: Callable[[sqlite3.Connection], T]) -> T:
-        """Run ``work(conn)`` on the database thread, inside this transaction."""
-        if not self._open:
-            msg = "transaction is finished"
-            raise RuntimeError(msg)
-        return await self._db._call(work, self._db._conn)
-
-    def close(self) -> None:
-        self._open = False
+    @event.listens_for(engine.sync_engine, "begin")
+    def _on_begin(conn: Any) -> None:
+        read_only = conn.get_execution_options().get("read_only", False)
+        conn.exec_driver_sql("BEGIN" if read_only else "BEGIN IMMEDIATE")

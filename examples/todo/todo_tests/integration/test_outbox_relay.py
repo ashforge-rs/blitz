@@ -1,16 +1,15 @@
-"""The relay delivers committed audit entries, in order, at least once."""
+"""The relay delivers committed audit entries, in order, at least once (every SQL backend)."""
 
 import asyncio
 
 import pytest
 from audit.backend import AuditEvent, AuditIntegrity, AuditResult
+from sqlalchemy import func, select
 
 from todo_app.kernel import Actor, AuditOutcome, AuditRecord
 from todo_app.persistence import Database, OutboxRelay
-from todo_app.users.adapters.sqlite_users_unit_of_work import (
-    OUTBOX_TABLE,
-    SqliteUsersUnitOfWorkFactory,
-)
+from todo_app.users.adapters.sql_tables import audit_outbox
+from todo_app.users.adapters.sql_users_unit_of_work import SqlUsersUnitOfWorkFactory
 from todo_tests.fakes import EPOCH, RecordingAuditBackend
 
 ACTOR = Actor(user_id="u1", correlation_id="req-1", client_address="10.0.0.1:5000", entrypoint="/x")
@@ -37,14 +36,16 @@ def _entry(entry_id: str, outcome: AuditOutcome = AuditOutcome.SUCCESS) -> Audit
 
 
 async def _commit(db: Database, *entries: AuditRecord) -> None:
-    async with SqliteUsersUnitOfWorkFactory(db)() as uow:
+    async with SqlUsersUnitOfWorkFactory(db)() as uow:
         for entry in entries:
             await uow.audit.record(entry)
 
 
 async def _pending(db: Database) -> int:
-    row = await db.query(lambda c: c.execute(f"SELECT count(*) FROM {OUTBOX_TABLE}").fetchone())  # noqa: S608 — constant
-    return int(row[0])
+    async with db.transaction(read_only=True) as conn:
+        return int(
+            (await conn.execute(select(func.count()).select_from(audit_outbox))).scalar_one()
+        )
 
 
 @pytest.fixture
@@ -54,7 +55,11 @@ def backend() -> RecordingAuditBackend:
 
 @pytest.fixture
 def relay(db: Database, backend: RecordingAuditBackend) -> OutboxRelay:
-    return OutboxRelay(db, OUTBOX_TABLE, backend, CountingIntegrity(), poll_interval=0.01)
+    return OutboxRelay(db, audit_outbox, backend, CountingIntegrity(), poll_interval=0.01)
+
+
+def _ids(backend: RecordingAuditBackend) -> list[object]:
+    return [e.metadata["audit_id"] for e in backend.events]
 
 
 async def test_delivers_committed_entries_in_order_then_removes_them(
@@ -65,7 +70,7 @@ async def test_delivers_committed_entries_in_order_then_removes_them(
     assert await relay.flush() == 2
 
     first, second = backend.events
-    assert [e.metadata["audit_id"] for e in backend.events] == ["a1", "a2"]
+    assert _ids(backend) == ["a1", "a2"]
     assert (first.method, first.result, first.principal) == (
         "users.register",
         AuditResult.SUCCESS,
@@ -74,6 +79,7 @@ async def test_delivers_committed_entries_in_order_then_removes_them(
     assert (first.correlation_id, first.remote_addr, first.path) == ("req-1", "10.0.0.1:5000", "/x")
     assert first.metadata["resource_id"] == "u1"
     assert first.metadata["reason"] == "x"
+    assert first.metadata["occurred_at"] == EPOCH.isoformat()
     assert second.result is AuditResult.FAILURE
     assert await _pending(db) == 0
 
@@ -82,7 +88,7 @@ async def test_rolled_back_entries_are_never_delivered(
     db: Database, relay: OutboxRelay, backend: RecordingAuditBackend
 ) -> None:
     async def failing_unit() -> None:
-        async with SqliteUsersUnitOfWorkFactory(db)() as uow:
+        async with SqlUsersUnitOfWorkFactory(db)() as uow:
             await uow.audit.record(_entry("a1"))
             raise RuntimeError
 
@@ -104,14 +110,14 @@ async def test_an_unavailable_backend_delays_delivery_without_losing_entries(
 
     backend.fail_with = None
     assert await relay.flush() == 2
-    assert [e.metadata["audit_id"] for e in backend.events] == ["a1", "a2"]
+    assert _ids(backend) == ["a1", "a2"]
 
 
 async def test_integrity_is_applied_in_delivery_order(
     db: Database, backend: RecordingAuditBackend
 ) -> None:
     integrity = CountingIntegrity()
-    relay = OutboxRelay(db, OUTBOX_TABLE, backend, integrity)
+    relay = OutboxRelay(db, audit_outbox, backend, integrity)
     await _commit(db, _entry("a1"), _entry("a2"), _entry("a3"))
 
     await relay.flush()
@@ -125,27 +131,22 @@ async def test_the_background_loop_delivers_without_being_asked(
     relay.start()
     await _commit(db, _entry("a1"))
 
-    async with asyncio.timeout(2):
+    async with asyncio.timeout(5):
         while not backend.events:  # noqa: ASYNC110 — polling an external backend's state
             await asyncio.sleep(0.01)
     await relay.aclose()
 
-    assert [e.metadata["audit_id"] for e in backend.events] == ["a1"]
+    assert _ids(backend) == ["a1"]
 
 
 async def test_close_makes_a_last_delivery_attempt(
     db: Database, backend: RecordingAuditBackend
 ) -> None:
-    relay = OutboxRelay(db, OUTBOX_TABLE, backend, CountingIntegrity(), poll_interval=3600)
+    relay = OutboxRelay(db, audit_outbox, backend, CountingIntegrity(), poll_interval=3600)
     relay.start()
     await asyncio.sleep(0)  # let the first (empty) cycle run
     await _commit(db, _entry("a1"))
 
     await relay.aclose()
 
-    assert [e.metadata["audit_id"] for e in backend.events] == ["a1"]
-
-
-def test_table_names_are_checked() -> None:
-    with pytest.raises(ValueError, match="invalid table name"):
-        OutboxRelay(None, "x; DROP TABLE users", RecordingAuditBackend(), CountingIntegrity())  # type: ignore[arg-type]  # rejected before db is used
+    assert _ids(backend) == ["a1"]

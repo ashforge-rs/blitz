@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Self
 
-from todo_app.kernel import AuditTrail, IdempotencyStore
+from todo_app.kernel import AuditTrail, IdempotencyKeyTakenError, IdempotencyStore
 from todo_app.users.ports import (
     ApiTokenRepository,
     EmailTakenError,
@@ -11,6 +11,7 @@ from todo_app.users.ports import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
     from types import TracebackType
 
@@ -47,6 +48,9 @@ class InMemoryUsersUnitOfWorkFactory(UsersUnitOfWorkFactory):
         self.commits = 0
         #: Set to make the next units of work fail on entry (simulates an outage or a bug).
         self.fail_with: Exception | None = None
+        #: Set to simulate a concurrent request: called (once) when ``idempotency.add`` runs,
+        #: it commits the winner's changes into :attr:`state`; the add then loses the race.
+        self.concurrent_commit: Callable[[UsersState, IdempotencyRecord], None] | None = None
 
     def __call__(self, *, read_only: bool = False) -> InMemoryUsersUnitOfWork:
         return InMemoryUsersUnitOfWork(self, read_only=read_only)
@@ -72,7 +76,7 @@ class InMemoryUsersUnitOfWork(UsersUnitOfWork):
 
     @property
     def idempotency(self) -> InMemoryUsersIdempotencyStore:
-        return InMemoryUsersIdempotencyStore(self._work)
+        return InMemoryUsersIdempotencyStore(self._work, self._factory)
 
     async def __aenter__(self) -> Self:
         if self._factory.fail_with is not None:
@@ -128,11 +132,21 @@ class InMemoryUsersAuditTrail(AuditTrail):
 
 
 class InMemoryUsersIdempotencyStore(IdempotencyStore):
-    def __init__(self, state: UsersState) -> None:
+    def __init__(self, state: UsersState, factory: InMemoryUsersUnitOfWorkFactory) -> None:
         self._s = state
+        self._factory = factory
 
     async def get(self, scope: str, key: str) -> IdempotencyRecord | None:
         return self._s.idempotency.get((scope, key))
 
-    async def put(self, record: IdempotencyRecord) -> None:
+    async def add(self, record: IdempotencyRecord) -> None:
+        if (race := self._factory.concurrent_commit) is not None:
+            self._factory.concurrent_commit = None
+            race(self._factory.state, record)
+            raise IdempotencyKeyTakenError
+        if (record.scope, record.key) in self._s.idempotency:
+            raise IdempotencyKeyTakenError
+        self._s.idempotency[(record.scope, record.key)] = record
+
+    async def replace(self, record: IdempotencyRecord) -> None:
         self._s.idempotency[(record.scope, record.key)] = record

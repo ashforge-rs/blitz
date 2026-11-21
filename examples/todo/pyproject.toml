@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "Example service on blitz: layered architecture, HTTP and CLI drivers"
 requires-python = ">=3.15"
 dependencies = [
+  "aiosqlite>=0.21",
+  "alembic>=1.16",
+  "asyncpg>=0.30",
   "blitz",
+  "sqlalchemy[asyncio]>=2.0.40",
   "typer>=0.20",
 ]
 
@@ -50,6 +54,8 @@ src = ["."]
 "todo_app/**/domain.py" = ["TC"]
 "todo_app/**/adapters/http/*.py" = ["TC"]
 "todo_app/auth/*.py" = ["TC"]
+# Alembic environments and revisions are scripts Alembic executes, not app modules.
+"todo_app/**/migrations/**" = ["TC"]
 
 # ── mypy ─────────────────────────────────────────────────────────────────────
 [tool.mypy]

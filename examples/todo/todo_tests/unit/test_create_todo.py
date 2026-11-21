@@ -1,9 +1,12 @@
+from dataclasses import replace
+
 import pytest
 
-from todo_app.kernel import Actor, AuditOutcome, StorageUnavailableError
+from todo_app.kernel import Actor, AuditOutcome, IdempotencyRecord, StorageUnavailableError
 from todo_app.todos.entities import Title, Todo
 from todo_app.todos.use_cases import CreateTodo, TodoErrorCode
 from todo_tests.fakes import EPOCH, InMemoryTodosUnitOfWorkFactory, TodoTelemetryRecorder
+from todo_tests.fakes.in_memory_todos_unit_of_work import TodosState
 
 MILK = Title("Buy milk")
 KEY = "key-0001"
@@ -98,3 +101,21 @@ async def test_a_bug_is_not_disguised_as_a_storage_error(
 
     with pytest.raises(KeyError):
         await create_todo.execute("user-ada", MILK, ada)
+
+
+async def test_a_lost_key_race_replays_the_winner(
+    create_todo: CreateTodo, todos_uow: InMemoryTodosUnitOfWorkFactory, ada: Actor
+) -> None:
+    winner = Todo(id="winner", owner_id="user-ada", title=MILK, done=False, created_at=EPOCH)
+
+    def concurrent_request(state: TodosState, ours: IdempotencyRecord) -> None:
+        state.todos[winner.id] = winner
+        state.idempotency[(ours.scope, ours.key)] = replace(ours, resource_id=winner.id)
+
+    todos_uow.concurrent_commit = concurrent_request
+
+    created = (await create_todo.execute("user-ada", MILK, ada, idempotency_key=KEY)).unwrap()
+
+    assert created.replayed is True
+    assert created.todo == winner
+    assert todos_uow.state.todos == {"winner": winner}  # our attempt rolled back

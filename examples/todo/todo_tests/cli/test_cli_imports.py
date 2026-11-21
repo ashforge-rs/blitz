@@ -11,7 +11,10 @@ WEB = ("fastapi", "starlette", "uvicorn", "httpx", "todo_app.web", "todo_app.aut
 
 def _run_cli(db_path: str, *args: str) -> subprocess.CompletedProcess[str]:
     # No PYTHONPATH: the installed package must run on its own.
-    env = {"PATH": os.environ.get("PATH", ""), "TODO_DB_PATH": db_path}
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "TODO_DATABASE_URL": f"sqlite+aiosqlite:///{db_path}",
+    }
     return subprocess.run(  # noqa: S603 — fixed arguments, our own interpreter
         [sys.executable, "-X", "importtime", "-m", "todo_app.cli", *args],
         capture_output=True,

@@ -10,23 +10,46 @@ from config import Settings
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from prometheus_client import REGISTRY
+from pydantic import SecretStr
 
 from todo_app.factory import create_todo_app
 from todo_app.persistence import Database
 from todo_app.settings import TodoSettings
-from todo_app.todos.adapters.sqlite_todos_unit_of_work import MIGRATIONS as TODO_MIGRATIONS
 from todo_app.todos.container import TodosDomain
-from todo_app.users.adapters.sqlite_users_unit_of_work import MIGRATIONS as USER_MIGRATIONS
 from todo_app.users.container import UsersDomain
 from todo_tests.fakes import RecordingAuditBackend
 from todo_tests.fixture_types import Metric, RegisterUser
+from todo_tests.storage import BACKENDS, open_migrated, url_for
 
-# --- App + HTTP --------------------------------------------------------------
+# --- Storage -----------------------------------------------------------------
 
 
 @pytest.fixture
 def db_path(tmp_path: Path) -> str:
     return str(tmp_path / "todo.db")
+
+
+@pytest.fixture
+def database_url(db_path: str) -> str:
+    """SQLite file URL for the app and CLI tests."""
+    return f"sqlite+aiosqlite:///{db_path}"
+
+
+@pytest.fixture(params=BACKENDS)
+async def backend_url(request: pytest.FixtureRequest, database_url: str) -> str:
+    """An empty database on each configured backend (see ``todo_tests/storage.py``)."""
+    return await url_for(request.param, database_url)
+
+
+@pytest.fixture
+async def db(backend_url: str) -> AsyncIterator[Database]:
+    """Both contexts' schemas, migrated to head, on every configured backend."""
+    database = await open_migrated(backend_url)
+    yield database
+    await database.close()
+
+
+# --- App + HTTP --------------------------------------------------------------
 
 
 @pytest.fixture
@@ -36,14 +59,14 @@ def audit_log() -> RecordingAuditBackend:
 
 
 @pytest.fixture
-def app(db_path: str, audit_log: RecordingAuditBackend) -> FastAPI:
+def app(database_url: str, audit_log: RecordingAuditBackend) -> FastAPI:
     # _env_file=None: a developer's .env is never read, so tests don't depend on it.
     settings = Settings(  # type: ignore[call-arg]  # pydantic-settings init kwarg
         _env_file=None, ENVIRONMENT="test", LOG_LEVEL="WARNING", RATE_LIMIT="1000/minute"
     )
     todo_settings = TodoSettings(  # type: ignore[call-arg]  # same
         _env_file=None,
-        DB_PATH=db_path,
+        DATABASE_URL=SecretStr(database_url),
         # The relay effectively never polls; tests deliver with ``flush_audit``.
         OUTBOX_POLL_INTERVAL_SECONDS=3600,
     )
@@ -81,17 +104,6 @@ def register_user(client: AsyncClient) -> RegisterUser:
         return body
 
     return _register
-
-
-# --- Infrastructure ----------------------------------------------------------
-
-
-@pytest.fixture
-async def db(db_path: str) -> AsyncIterator[Database]:
-    """Both contexts' schemas on a fresh file, for SQLite adapter tests."""
-    database = await Database.connect(db_path, migrations=USER_MIGRATIONS + TODO_MIGRATIONS)
-    yield database
-    await database.close()
 
 
 @pytest.fixture

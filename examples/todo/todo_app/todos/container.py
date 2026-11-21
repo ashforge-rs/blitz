@@ -5,12 +5,10 @@ from typing import TYPE_CHECKING
 from todo_app.kernel import SystemClock, Uuid7Ids
 from todo_app.persistence import Database, OutboxRelay
 
+from .adapters import sql_migrations
 from .adapters.observed_todo_telemetry import ObservedTodoTelemetry
-from .adapters.sqlite_todos_unit_of_work import (
-    MIGRATIONS,
-    OUTBOX_TABLE,
-    SqliteTodosUnitOfWorkFactory,
-)
+from .adapters.sql_tables import audit_outbox
+from .adapters.sql_todos_unit_of_work import SqlTodosUnitOfWorkFactory
 from .use_cases import CreateTodo
 
 if TYPE_CHECKING:
@@ -40,11 +38,21 @@ async def build_todos(
     poll_outbox: bool = True,
 ) -> TodosDomain:
     db = await Database.connect(
-        settings.DB_PATH, migrations=MIGRATIONS, busy_timeout_ms=settings.DB_BUSY_TIMEOUT_MS
+        settings.DATABASE_URL.get_secret_value(),
+        busy_timeout_ms=settings.DB_BUSY_TIMEOUT_MS,
+        connect_timeout_s=settings.DB_CONNECT_TIMEOUT_SECONDS,
     )
+    try:
+        if settings.DB_MIGRATE_ON_STARTUP:
+            await sql_migrations.upgrade(db)
+        else:
+            await sql_migrations.ensure_at_head(db)
+    except BaseException:
+        await db.close()
+        raise
     relay = OutboxRelay(
         db,
-        OUTBOX_TABLE,
+        audit_outbox,
         audit_backend,
         audit_integrity,
         poll_interval=settings.OUTBOX_POLL_INTERVAL_SECONDS,
@@ -52,7 +60,7 @@ async def build_todos(
     if poll_outbox:
         relay.start()
     create = CreateTodo(
-        SqliteTodosUnitOfWorkFactory(db),
+        SqlTodosUnitOfWorkFactory(db),
         ObservedTodoTelemetry(),
         clock=SystemClock(),
         ids=Uuid7Ids(),

@@ -1,15 +1,20 @@
 """The CLI driver: arguments in, JSON and exit codes out, through Typer's CliRunner."""
 
 import json
+import sqlite3
+from contextlib import closing
 from typing import Any
 
 import pytest
 import typer
+from pydantic import SecretStr
 from typer.testing import CliRunner, Result
 
 from todo_app.cli.exit_codes import ExitCode
+from todo_app.cli.main import create_cli
 from todo_app.kernel import StorageUnavailableError
-from todo_app.todos.adapters.sqlite_todo_repository import SqliteTodoRepository
+from todo_app.settings import TodoSettings
+from todo_app.todos.adapters.sql_todo_repository import SqlTodoRepository
 from todo_tests.fakes import RecordingAuditBackend
 
 
@@ -126,10 +131,10 @@ def test_storage_outage_is_exit_75_so_callers_can_retry(
 ) -> None:
     token = _register(runner, cli)
 
-    async def unavailable(self: SqliteTodoRepository, todo: object) -> None:
+    async def unavailable(self: SqlTodoRepository, todo: object) -> None:
         raise StorageUnavailableError("database is locked")
 
-    monkeypatch.setattr(SqliteTodoRepository, "add", unavailable)
+    monkeypatch.setattr(SqlTodoRepository, "add", unavailable)
 
     result = _invoke(runner, cli, "create-todo", "--title", "x", token=token)
 
@@ -149,3 +154,35 @@ def test_the_token_is_not_a_command_line_option(runner: CliRunner, cli: typer.Ty
 
     assert "--token" not in result.stdout
     assert "TODO_API_TOKEN" in result.stdout
+
+
+def _cli_without_auto_migration(database_url: str) -> typer.Typer:
+    settings = TodoSettings(  # type: ignore[call-arg]  # pydantic-settings init kwarg
+        _env_file=None, DATABASE_URL=SecretStr(database_url), DB_MIGRATE_ON_STARTUP=False
+    )
+    return create_cli(settings=settings, configure_logs=False)
+
+
+def test_db_upgrade_migrates_every_context(
+    runner: CliRunner, database_url: str, db_path: str
+) -> None:
+    result = runner.invoke(_cli_without_auto_migration(database_url), ["db", "upgrade"])
+
+    assert result.exit_code == ExitCode.OK, result.output
+    assert json.loads(result.stdout) == {"migrated": ["users", "todos"]}
+    with closing(sqlite3.connect(db_path)) as conn:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"users", "todos", "alembic_version_users", "alembic_version_todos"} <= tables
+
+
+def test_without_auto_migration_a_stale_schema_fails_fast(
+    runner: CliRunner, database_url: str
+) -> None:
+    result = runner.invoke(
+        _cli_without_auto_migration(database_url),
+        ["register", "--email", "ada@example.com", "--name", "Ada"],
+    )
+
+    assert result.exit_code == ExitCode.CONFIG
+    assert _err(result)["error"] == "schema_out_of_date"
+    assert "todo db upgrade" in _err(result)["message"]

@@ -7,6 +7,7 @@ from todo_app.kernel import (
     AuditOutcome,
     AuditRecord,
     IdempotencyConflictError,
+    IdempotencyKeyTakenError,
     IdempotencyRecord,
     StorageUnavailableError,
     fingerprint,
@@ -64,8 +65,7 @@ class RegisterUser:
         idempotency_key: str | None = None,
     ) -> Result[Registration, UserError]:
         try:
-            async with self._uow() as uow:
-                registration = await self._register(uow, email, name, actor, idempotency_key)
+            registration = await self._attempt(email, name, actor, idempotency_key)
         except EmailTakenError:
             return await self._reject(UserErrorCode.EMAIL_TAKEN, actor)
         except IdempotencyConflictError:
@@ -76,6 +76,18 @@ class RegisterUser:
 
         await self._telemetry.registered(registration.user, actor, replayed=registration.replayed)
         return Success(registration)
+
+    async def _attempt(
+        self, email: EmailAddress, name: DisplayName, actor: Actor, idempotency_key: str | None
+    ) -> Registration:
+        try:
+            async with self._uow() as uow:
+                return await self._register(uow, email, name, actor, idempotency_key)
+        except IdempotencyKeyTakenError:
+            # A concurrent request with the same key committed first.  Ours rolled
+            # back; run again and replay its result.
+            async with self._uow() as uow:
+                return await self._register(uow, email, name, actor, idempotency_key)
 
     async def _register(
         self,
@@ -102,7 +114,7 @@ class RegisterUser:
         await uow.api_tokens.add(hash_token(token), user.id, now)
         await uow.audit.record(self._audit(AuditOutcome.SUCCESS, actor, now, resource_id=user.id))
         if idempotency_key is not None:
-            await uow.idempotency.put(
+            await uow.idempotency.add(
                 IdempotencyRecord(
                     scope=OPERATION,
                     key=idempotency_key,
@@ -130,7 +142,7 @@ class RegisterUser:
         if previous.secret_ref is not None:
             await uow.api_tokens.revoke(previous.secret_ref)
         await uow.api_tokens.add(hash_token(token), user.id, now)
-        await uow.idempotency.put(replace(previous, secret_ref=hash_token(token)))
+        await uow.idempotency.replace(replace(previous, secret_ref=hash_token(token)))
         await uow.audit.record(
             self._audit(
                 AuditOutcome.SUCCESS, actor, now, resource_id=user.id, details={"replayed": "true"}

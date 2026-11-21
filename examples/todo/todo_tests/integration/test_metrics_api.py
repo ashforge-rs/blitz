@@ -2,7 +2,7 @@ import pytest
 from httpx import AsyncClient
 
 from todo_app.kernel import StorageUnavailableError
-from todo_app.todos.adapters.sqlite_todo_repository import SqliteTodoRepository
+from todo_app.todos.adapters.sql_todo_repository import SqlTodoRepository
 from todo_tests.fixture_types import Metric, RegisterUser
 
 
@@ -48,10 +48,10 @@ async def test_storage_outage_on_create_is_counted_and_500(
 ) -> None:
     ada = await register_user()
 
-    async def broken(self: SqliteTodoRepository, todo: object) -> None:
+    async def broken(self: SqlTodoRepository, todo: object) -> None:
         raise StorageUnavailableError("disk I/O error")
 
-    monkeypatch.setattr(SqliteTodoRepository, "add", broken)
+    monkeypatch.setattr(SqlTodoRepository, "add", broken)
     before = metric("todoapp_todos_created_total", result="error")
 
     r = await client.post(

@@ -7,6 +7,7 @@ from todo_app.kernel import (
     AuditOutcome,
     AuditRecord,
     IdempotencyConflictError,
+    IdempotencyKeyTakenError,
     IdempotencyRecord,
     StorageUnavailableError,
     fingerprint,
@@ -55,8 +56,7 @@ class CreateTodo:
         self, owner_id: str, title: Title, actor: Actor, *, idempotency_key: str | None = None
     ) -> Result[TodoCreated, TodoError]:
         try:
-            async with self._uow() as uow:
-                created = await self._create(uow, owner_id, title, actor, idempotency_key)
+            created = await self._attempt(owner_id, title, actor, idempotency_key)
         except IdempotencyConflictError:
             return await self._reject(TodoErrorCode.IDEMPOTENCY_KEY_REUSED, actor)
         except StorageUnavailableError as exc:
@@ -65,6 +65,18 @@ class CreateTodo:
 
         await self._telemetry.created(created.todo, actor, replayed=created.replayed)
         return Success(created)
+
+    async def _attempt(
+        self, owner_id: str, title: Title, actor: Actor, idempotency_key: str | None
+    ) -> TodoCreated:
+        try:
+            async with self._uow() as uow:
+                return await self._create(uow, owner_id, title, actor, idempotency_key)
+        except IdempotencyKeyTakenError:
+            # A concurrent request with the same key committed first.  Ours rolled
+            # back; run again and replay its result.
+            async with self._uow() as uow:
+                return await self._create(uow, owner_id, title, actor, idempotency_key)
 
     async def _create(
         self,
@@ -94,7 +106,7 @@ class CreateTodo:
         await uow.todos.add(todo)
         await uow.audit.record(self._audit(AuditOutcome.SUCCESS, actor, now, resource_id=todo.id))
         if idempotency_key is not None:
-            await uow.idempotency.put(
+            await uow.idempotency.add(
                 IdempotencyRecord(
                     scope=scope,
                     key=idempotency_key,

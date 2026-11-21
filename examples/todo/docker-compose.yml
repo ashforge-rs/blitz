@@ -1,0 +1,22 @@
+# Postgres for local runs:  docker compose up -d --wait
+#   app:    TODO_DATABASE_URL=postgresql+asyncpg://todo:todo@localhost:5432/todo make dev
+#   tests:  TODO_TEST_POSTGRES_URL=postgresql+asyncpg://todo:todo@localhost:5432/todo_test make verify
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: todo
+      POSTGRES_PASSWORD: todo
+      POSTGRES_DB: todo
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/create-test-db.sql:/docker-entrypoint-initdb.d/create-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U todo -d todo"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres-data:

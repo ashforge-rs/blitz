@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 if TYPE_CHECKING:
@@ -21,8 +21,16 @@ class TodoSettings(BaseSettings):
         extra="ignore",
     )
 
-    DB_PATH: str = "todo.db"
+    #: SQLAlchemy URL.  SQLite (``sqlite+aiosqlite:///todo.db``) or Postgres
+    #: (``postgresql+asyncpg://user:password@host/db``).  Secret: it may hold a password.
+    DATABASE_URL: SecretStr = SecretStr("sqlite+aiosqlite:///todo.db")
+    #: Postgres: how long to wait for a new connection, or for a free one in the pool.
+    DB_CONNECT_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0)
+    #: SQLite only: how long a write waits for another connection's write lock.
     DB_BUSY_TIMEOUT_MS: int = Field(default=5_000, ge=0)
+    #: Apply pending migrations when the app or CLI starts.  Convenient in development;
+    #: in production set false and run ``todo db upgrade`` as a release step.
+    DB_MIGRATE_ON_STARTUP: bool = True
     #: How often the audit outbox relay looks for undelivered entries.
     OUTBOX_POLL_INTERVAL_SECONDS: float = Field(default=0.5, gt=0)
 

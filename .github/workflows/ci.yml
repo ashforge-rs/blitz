@@ -95,6 +95,20 @@ jobs:
     defaults:
       run:
         working-directory: examples/todo
+    # The storage tests (contract, relay, migrations) also run against Postgres.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: todo
+          POSTGRES_PASSWORD: todo
+          POSTGRES_DB: todo_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U todo -d todo_test"
+          --health-interval 2s --health-timeout 5s --health-retries 20
+    env:
+      TODO_TEST_POSTGRES_URL: postgresql+asyncpg://todo:todo@localhost:5432/todo_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

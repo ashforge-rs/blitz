@@ -13,3 +13,5 @@ class ExitCode(IntEnum):
     TEMPFAIL = 75
     #: Missing or invalid API token.
     NOPERM = 77
+    #: The deployment is misconfigured, e.g. the schema needs ``todo db upgrade``.
+    CONFIG = 78

@@ -10,12 +10,10 @@ from typing import TYPE_CHECKING
 from todo_app.kernel import SystemClock, Uuid7Ids
 from todo_app.persistence import Database, OutboxRelay
 
+from .adapters import sql_migrations
 from .adapters.observed_user_telemetry import ObservedUserTelemetry
-from .adapters.sqlite_users_unit_of_work import (
-    MIGRATIONS,
-    OUTBOX_TABLE,
-    SqliteUsersUnitOfWorkFactory,
-)
+from .adapters.sql_tables import audit_outbox
+from .adapters.sql_users_unit_of_work import SqlUsersUnitOfWorkFactory
 from .use_cases import AuthenticateToken, RegisterUser
 
 if TYPE_CHECKING:
@@ -55,13 +53,23 @@ async def build_users(
     """Open the users context.  ``poll_outbox=False`` (short-lived processes such as
     the CLI) delivers audit entries only when the context is closed."""
     db = await Database.connect(
-        settings.DB_PATH, migrations=MIGRATIONS, busy_timeout_ms=settings.DB_BUSY_TIMEOUT_MS
+        settings.DATABASE_URL.get_secret_value(),
+        busy_timeout_ms=settings.DB_BUSY_TIMEOUT_MS,
+        connect_timeout_s=settings.DB_CONNECT_TIMEOUT_SECONDS,
     )
-    uow = SqliteUsersUnitOfWorkFactory(db)
+    try:
+        if settings.DB_MIGRATE_ON_STARTUP:
+            await sql_migrations.upgrade(db)
+        else:
+            await sql_migrations.ensure_at_head(db)
+    except BaseException:
+        await db.close()
+        raise
+    uow = SqlUsersUnitOfWorkFactory(db)
     telemetry = ObservedUserTelemetry()
     relay = OutboxRelay(
         db,
-        OUTBOX_TABLE,
+        audit_outbox,
         audit_backend,
         audit_integrity,
         poll_interval=settings.OUTBOX_POLL_INTERVAL_SECONDS,

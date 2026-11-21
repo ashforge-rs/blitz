@@ -2,7 +2,7 @@
 
 A small service built on the blitz boilerplate. Users register and get an API token, then
 create todos with that token, over **HTTP or the command line**. Both drivers run the same use
-cases on the same database. It stores everything in SQLite and exposes Prometheus counters.
+cases on the same database. It stores everything with SQLAlchemy and Alembic, on Postgres or SQLite, and exposes Prometheus counters.
 Only create use cases exist, on purpose: the example shows how to structure an app on blitz,
 not how to build a full todo product.
 
@@ -19,6 +19,15 @@ blitz from this repository. From `examples/todo/`:
 make install        # uv sync
 make dev            # HTTP API with hot reload on :8000
 make verify         # format, lint, mypy --strict, tests (the root `make verify` runs it too)
+```
+
+SQLite is the default (`todo.db`). For Postgres:
+
+```bash
+make db-up          # docker compose: Postgres on :5432, plus a todo_test database
+export TODO_DATABASE_URL=postgresql+asyncpg://todo:todo@localhost:5432/todo
+make dev
+TODO_TEST_POSTGRES_URL=postgresql+asyncpg://todo:todo@localhost:5432/todo_test make verify
 ```
 
 Settings are read from the environment or `.env`. See [`.env.example`](.env.example) for this
@@ -69,6 +78,7 @@ Exit codes follow `sysexits.h`:
 | `2` | invalid input: the same value-object rules and messages as HTTP's `422` |
 | `75` | storage unavailable. Retry with the same `--idempotency-key` |
 | `77` | missing or invalid `TODO_API_TOKEN` |
+| `78` | schema out of date: run `todo db upgrade` |
 
 A token from one driver works in the other, and an idempotency key used in one replays in the
 other (`todo_tests/cli/test_cli_http_interop.py`). The CLI doesn't poll the audit outbox: each
@@ -83,14 +93,14 @@ flowchart TB
         direction LR
         fastapi["FastAPI + blitz<br/>create_app, ResultRouter, auth"]
         typer["Typer"]
-        sqlite[("SQLite")]
+        sqlite[("Postgres / SQLite<br/>SQLAlchemy + Alembic")]
         sinks["Prometheus · loguru · audit backend"]
     end
     subgraph adapters ["Interface adapters"]
         direction LR
         http["adapters/http/<br/>schemas · problems · routes"]
         cli["cli/<br/>commands · composition"]
-        repos["adapters/sqlite_*<br/>units of work · repositories"]
+        repos["adapters/sql_*<br/>units of work · repositories · migrations"]
         telemetry["adapters/observed_*_telemetry"]
         relay["persistence/outbox_relay"]
     end
@@ -141,10 +151,13 @@ examples/todo/
 │   │   ├── errors.py                    # StorageUnavailableError
 │   │   ├── clock.py                     # Clock port, SystemClock
 │   │   └── ids.py                       # IdGenerator port, Uuid7Ids
-│   ├── persistence/                     # shared SQLite infrastructure
-│   │   ├── database.py                  # Database.transaction(): explicit, lock-held units of work
-│   │   ├── sqlite_audit_outbox.py       # AuditTrail inside the transaction
-│   │   ├── sqlite_idempotency_store.py  # IdempotencyStore inside the transaction
+│   ├── persistence/                     # shared SQL infrastructure (SQLAlchemy Core, async)
+│   │   ├── database.py                  # Database: engine, transaction(), dialect setup
+│   │   ├── errors.py                    # outage vs bug, by SQLite code / Postgres SQLSTATE
+│   │   ├── tables.py  types.py          # outbox + idempotency table builders, UtcDateTime
+│   │   ├── sql_audit_outbox.py          # AuditTrail inside the transaction
+│   │   ├── sql_idempotency_store.py     # IdempotencyStore inside the transaction
+│   │   ├── migrations.py                # upgrade(), ensure_at_head() via Alembic
 │   │   └── outbox_relay.py              # delivers committed audit entries to the backend
 │   ├── web/                             # shared HTTP helpers: request_actor, Idempotency-Key
 │   ├── auth/
@@ -180,9 +193,12 @@ examples/todo/
 │   │   │   │   ├── schemas.py           # Pydantic request/response bodies
 │   │   │   │   ├── problems.py          # UserProblem: error → HTTP status
 │   │   │   │   └── routes.py            # POST /users/
-│   │   │   ├── sqlite_users_unit_of_work.py   # one transaction + every users table
-│   │   │   ├── sqlite_user_repository.py
-│   │   │   ├── sqlite_api_token_repository.py
+│   │   │   ├── sql_tables.py                  # the context's tables (SQLAlchemy Core)
+│   │   │   ├── sql_users_unit_of_work.py      # one database transaction
+│   │   │   ├── sql_user_repository.py
+│   │   │   ├── sql_api_token_repository.py
+│   │   │   ├── sql_migrations.py              # upgrade() / ensure_at_head() for this context
+│   │   │   ├── migrations/                    # Alembic env + versions, table alembic_version_users
 │   │   │   ├── observed_user_telemetry.py     # Prometheus counters, logs
 │   │   │   └── users_token_verifier.py        # AuthenticateToken → auth.TokenVerifier
 │   │   ├── container.py                 # UsersDomain + build_users(): framework-free wiring
@@ -196,7 +212,7 @@ examples/todo/
     ├── fixture_types.py                 # types of the conftest fixtures
     ├── unit/                            # one file per use case / entity module, on fakes
     ├── integration/                     # Database, outbox relay, unit-of-work *contract* tests
-    │                                    # (fakes and SQLite alike), HTTP, audit, metrics, wiring
+    │                                    # (fakes, SQLite and Postgres alike), migrations, HTTP, audit, metrics, wiring
     ├── cli/                             # CLI commands, CLI+HTTP interop, runtime import proof
     ├── fuzz/                            # Hypothesis properties of value objects and tokens
     └── architecture/                    # the dependency rule, as a test
@@ -205,7 +221,7 @@ examples/todo/
 ### Ports and adapters
 
 Each port is an abstract base class owned by the application layer. Production adapters
-(`Sqlite*`, `Observed*`) and test fakes (`InMemory*`, `*Recorder`) subclass it, so they can
+(`Sql*`, `Observed*`) and test fakes (`InMemory*`, `*Recorder`) subclass it, so they can
 be swapped without the use case noticing. The users context looks like this, and todos has the
 same shape:
 
@@ -242,11 +258,11 @@ classDiagram
     RegisterUser --> UserTelemetry : reports after commit
     UsersUnitOfWorkFactory ..> UsersUnitOfWork : creates
     UsersUnitOfWork --> UserRepository : exposes
-    UsersUnitOfWorkFactory <|-- SqliteUsersUnitOfWorkFactory
+    UsersUnitOfWorkFactory <|-- SqlUsersUnitOfWorkFactory
     UsersUnitOfWorkFactory <|-- InMemoryUsersUnitOfWorkFactory
-    UsersUnitOfWork <|-- SqliteUsersUnitOfWork
+    UsersUnitOfWork <|-- SqlUsersUnitOfWork
     UsersUnitOfWork <|-- InMemoryUsersUnitOfWork
-    UserRepository <|-- SqliteUserRepository
+    UserRepository <|-- SqlUserRepository
     UserRepository <|-- InMemoryUserRepository
     UserTelemetry <|-- ObservedUserTelemetry
     UserTelemetry <|-- UserTelemetryRecorder
@@ -262,7 +278,7 @@ the CLI are two thin composition roots on top of it, so both get identical use c
 ```mermaid
 flowchart LR
     containers["users/container.py · todos/container.py<br/>build_users() · build_todos()"]
-    concrete["Database · Sqlite*UnitOfWorkFactory<br/>Observed*Telemetry · OutboxRelay<br/>SystemClock · Uuid7Ids"]
+    concrete["Database · Sql*UnitOfWorkFactory<br/>Observed*Telemetry · OutboxRelay<br/>SystemClock · Uuid7Ids"]
     usecases["RegisterUser · AuthenticateToken · CreateTodo"]
 
     subgraph httpproc ["HTTP process"]
@@ -294,7 +310,7 @@ sequenceDiagram
     participant V as UsersTokenVerifier
     participant R as todos HTTP route
     participant U as CreateTodo
-    participant D as SQLite
+    participant D as Database
     participant T as TodoTelemetry
     participant O as OutboxRelay
     participant S as Audit backend
@@ -306,8 +322,8 @@ sequenceDiagram
     B->>R: Principal(user_id)
     R->>U: execute(owner_id, Title, actor, key)
     rect rgba(80, 140, 255, 0.12)
-        Note over U,D: one unit of work = one SQLite transaction
-        U->>D: BEGIN IMMEDIATE, look up the idempotency key
+        Note over U,D: one unit of work = one database transaction
+        U->>D: BEGIN, look up the idempotency key
         alt same key and body seen before
             D-->>U: original todo (replay)
         else new request
@@ -333,8 +349,8 @@ sequenceDiagram
    to the `Title` value object. The adapter builds an `Actor` (user, request ID, client, path)
    from blitz's request context and calls `CreateTodo.execute(owner_id, Title(...), actor,
    idempotency_key=...)`.
-3. **Use case** (`todos/use_cases/create_todo.py`): opens one **unit of work**, which on SQLite
-   is a single transaction. Inside it the use case:
+3. **Use case** (`todos/use_cases/create_todo.py`): opens one **unit of work**, which is a single
+   database transaction. Inside it the use case:
    - looks up the idempotency key, and if it's a retry returns the original todo;
    - adds the todo;
    - records the audit entry in the **outbox**;
@@ -357,7 +373,7 @@ sequenceDiagram
 | Entities hold business rules | `EmailAddress` normalises and validates itself, as do `DisplayName` and `Title`. An invalid `User` can't be constructed. |
 | Use cases are application-specific rules | `RegisterUser`, `AuthenticateToken` and `CreateTodo` are plain classes with explicit dependencies. |
 | Ports owned by the application | Every port is an abstract base class (`abc.ABC` + `@abstractmethod`). `ports/` defines the units of work, repositories and telemetry. `kernel/` defines `Clock`, `IdGenerator`, `AuditTrail` and `IdempotencyStore`, and `auth/` defines `TokenVerifier`. `EmailTakenError` is part of the port's contract, not SQLite's. |
-| Adapters implement ports explicitly | Every adapter and every fake subclasses its port (`class SqliteUserRepository(UserRepository)`), so an incomplete one fails on instantiation, and your editor can list each port's implementations. |
+| Adapters implement ports explicitly | Every adapter and every fake subclasses its port (`class SqlUserRepository(UserRepository)`), so an incomplete one fails on instantiation, and your editor can list each port's implementations. |
 | Framework independence | No FastAPI, Pydantic, SQLite, Prometheus, loguru or blitz types in `entities/`, `ports/` or `use_cases/`. HTTP statuses live in `adapters/http/problems.py`. |
 | Separate input/output models | Pydantic `RegisterUserBody` / `RegisteredUserResponse` exist only at the HTTP edge, so the API shape can change without touching entities. |
 | Bounded contexts | `users` and `todos` never import each other, and todos keep the owner as a bare id with no foreign key. Only `factory.py` sees both. |
@@ -431,7 +447,7 @@ POST endpoints accept an `Idempotency-Key` header: a random value, 8–255 print
 sequenceDiagram
     actor C as Client
     participant U as RegisterUser
-    participant D as SQLite
+    participant D as Database
 
     C->>U: register ada with key K
     U->>D: user + token hash H1 + audit entry + record K maps to user, H1
@@ -454,7 +470,7 @@ generate it randomly (a UUIDv4) and never reuse it.
 
 ```mermaid
 flowchart TD
-    raised["An exception reaches the use case"] --> outage{"StorageUnavailableError?<br/>SQLite BUSY, LOCKED, IOERR, FULL ..."}
+    raised["An exception reaches the use case"] --> outage{"StorageUnavailableError?<br/>SQLite BUSY, LOCKED, IOERR · Postgres 08xxx, 53xxx, 40001 ..."}
     outage -- yes --> storage["Failure STORAGE_ERROR<br/>safe message, telemetry.storage_failed"]
     storage --> http500s["HTTP 500, code storage_error"]
     storage --> cli75["CLI exit 75: retry"]
@@ -467,8 +483,11 @@ flowchart TD
     bug --> clitb["CLI traceback, non-zero exit"]
 ```
 
-- **Outages.** `Database` translates SQLite *result codes* that mean "can't serve this right now"
-  (BUSY, LOCKED, IOERR, FULL, ...) into `StorageUnavailableError`, which is the only exception
+- **Outages.** `persistence/errors.py` translates the codes that mean "can't serve this right
+  now" into `StorageUnavailableError`: SQLite *result codes* (BUSY, LOCKED, IOERR, FULL, ...),
+  Postgres *SQLSTATEs* (connection exceptions `08`, resources `53`, shutdown `57P`, lock and
+  statement timeouts, serialization failures and deadlocks), and connect or pool timeouts.
+  That `StorageUnavailableError`, which is the only exception
   use cases catch (→ `500 storage_error`).
 - **Constraint violations** propagate to the repository, which translates the ones it knows
   (`EmailTakenError`).
@@ -478,16 +497,30 @@ flowchart TD
 - **Messages.** Use-case error messages are fixed, safe strings. Raw driver text goes to logs
   only, never into responses or audit entries.
 
-### SQLite
+### Persistence: SQLAlchemy, Alembic, Postgres or SQLite
 
-- **`Database.transaction()`** is an explicit `BEGIN IMMEDIATE … COMMIT`. It holds a lock for
-  the whole unit of work, so other requests' statements can't land inside it.
-- **One worker thread per `Database`** runs every statement in order, and the connection never
-  changes threads.
-- **Cancellation** (blitz's request timeout) triggers a shielded rollback, which lands before the
-  next transaction begins.
-- **Read-only units of work** always end in `ROLLBACK`.
-- **Connections** use WAL mode, foreign keys within a context, and `STRICT` tables.
+- **SQLAlchemy Core (async)**, not the ORM: the repositories map rows to the framework-free
+  entities explicitly. Swapping the database is a matter of `TODO_DATABASE_URL`, and the
+  contract tests run on both.
+- **`Database.transaction()`** is one database transaction on its own pooled connection,
+  committed when the block completes and rolled back when it raises or is cancelled (blitz's
+  request timeout). Read-only units of work always end in `ROLLBACK`; on Postgres they are also
+  `READ ONLY`.
+- **SQLite:** writes take the write lock up front (`BEGIN IMMEDIATE`), so two connections can't
+  deadlock upgrading read locks. Connections use WAL mode and foreign keys.
+- **Postgres:** `pool_pre_ping` replaces connections the server dropped, and
+  `TODO_DB_CONNECT_TIMEOUT_SECONDS` bounds every connection attempt and pool wait, so an
+  unreachable database fails fast instead of hanging each request.
+- **Timestamps** are stored in UTC and always read back timezone-aware (`UtcDateTime`).
+- **Migrations:** each context has its own Alembic environment and version table
+  (`alembic_version_users`, `alembic_version_todos`), so they evolve independently.
+  - **Startup:** with `TODO_DB_MIGRATE_ON_STARTUP=true` (development) the app migrates itself.
+    In production, set it to false and run `todo db upgrade` as a release step. Startup then
+    refuses to run against a schema that isn't at head (CLI exit `78`).
+  - **New revision:** `uv run alembic -c todo_app/users/adapters/migrations/alembic.ini revision
+    --autogenerate -m "…"`.
+  - **Drift test:** `todo_tests/integration/test_migrations.py` fails if the migrations and
+    `sql_tables.py` drift apart, and checks that every history downgrades and upgrades cleanly.
 
 ### API tokens
 
@@ -513,13 +546,13 @@ closing the connection.
   and counted (`todoapp_users_storage_failures_total`, `todoapp_todos_created_total{result="error"}`).
 - **Integrity sequence gaps.** `SequenceIntegrity` numbers events as they're delivered, so an
   entry whose delivery failed gets a new number when it's retried.
-- **SQLite limits.** Writes are serialised per context, and with `WORKERS > 1` processes contend
+- **SQLite is for local runs.** Writes are serialised, and with `WORKERS > 1` processes contend
   for the file lock: a write that can't get it within `TODO_DB_BUSY_TIMEOUT_MS` becomes a
-  `storage_error`. Run one worker, or move to Postgres by implementing the unit-of-work ports.
+  `storage_error`. Use Postgres anywhere else.
+- **Several app instances relay the same outbox** without claiming rows, so an entry can be
+  delivered twice (identified by `audit_id`). `FOR UPDATE SKIP LOCKED` claiming is the next step.
 - **Housekeeping.** Expired idempotency records are overwritten when their key is reused, but
   never purged.
-- **Migrations** are idempotent `CREATE … IF NOT EXISTS` statements, applied at startup. A
-  production service would version them (Alembic, yoyo).
 
 ## Metrics
 
@@ -537,6 +570,7 @@ make verify         # or just the tests: uv run pytest
 ```
 
 The tests come in four tiers: unit, integration, fuzz and architecture. Each test that needs a
-database gets a fresh SQLite file under `tmp_path`. `make verify` also formats, lints,
+database gets a fresh SQLite file under `tmp_path`; storage tests also run on Postgres when
+`TODO_TEST_POSTGRES_URL` is set (`make db-up` starts one; CI does it with a service container). `make verify` also formats, lints,
 type-checks (`mypy --strict`, including that every fake satisfies its port) and tests this
 example.

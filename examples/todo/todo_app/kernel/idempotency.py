@@ -44,6 +44,10 @@ class IdempotencyRecord:
         return now - self.created_at < IDEMPOTENCY_TTL
 
 
+class IdempotencyKeyTakenError(Exception):
+    """:meth:`IdempotencyStore.add` lost a race: a concurrent request committed this key first."""
+
+
 class IdempotencyStore(ABC):
     """Port: completed requests by ``(scope, key)``, inside the current unit of work."""
 
@@ -51,8 +55,13 @@ class IdempotencyStore(ABC):
     async def get(self, scope: str, key: str) -> IdempotencyRecord | None: ...
 
     @abstractmethod
-    async def put(self, record: IdempotencyRecord) -> None:
-        """Insert or replace the record for ``(scope, key)``."""
+    async def add(self, record: IdempotencyRecord) -> None:
+        """Record a new key; raise :class:`IdempotencyKeyTakenError` if it already exists."""
+        ...
+
+    @abstractmethod
+    async def replace(self, record: IdempotencyRecord) -> None:
+        """Overwrite the record of an existing key (e.g. a rotated secret reference)."""
         ...
 
 
