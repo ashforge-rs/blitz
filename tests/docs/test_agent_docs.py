@@ -29,6 +29,8 @@ TOP_LEVEL = (
     "grafana/",
     "infra/",
     "openspec/",
+    "docs/",
+    "examples/",
 )
 ROOT_FILES = {"Makefile", "pyproject.toml", ".env.example", "docker-compose.yml", "AGENTS.md"}
 PLACEHOLDER = re.compile(r"[<>{}*$]|\.\.\.|…")

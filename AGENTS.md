@@ -87,6 +87,14 @@ reason phrase; the message is logged. Outside domains, raise `AppError` subclass
 **Audit.** State-changing service methods emit an event, failures included:
 `await log_operation(backend, integrity, ctx, "orders.create", resource_id=order.id)`.
 
+### Flat or layered?
+
+Domains are **flat by default** (the table above). For a *high-integrity* service, use the
+layered pattern instead: no lost or half-applied writes, a complete audit trail, idempotent
+retries, or several interfaces over the same rules. The criteria are in
+`docs/adr/0001-layered-high-integrity-pattern.md`, and the reference implementation is
+`examples/todo/`. Use one pattern throughout a service, and don't mix the two.
+
 ## Gotchas
 
 These are the mistakes agents make most often here:
