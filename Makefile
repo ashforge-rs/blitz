@@ -12,7 +12,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 SERVICE ?= api
-PY_DIRS := src/ tests/ scripts/
+PY_DIRS := src/ tests/ scripts/ examples/
 PORT    ?= 8000
 IMAGE   ?= ghcr.io/$(shell git config --get remote.origin.url | sed 's/.*github.com[:/]//' | sed 's/\.git$$//' | tr '[:upper:]' '[:lower:]')-$(SERVICE)
 
@@ -34,6 +34,7 @@ verify: ## Check everything without changing files: format, lint, types, tests
 	uv run ruff format --check $(PY_DIRS)
 	uv run ruff check $(PY_DIRS)
 	uv run mypy src/
+	MYPYPATH=examples/todo uv run mypy examples/todo
 	uv run pytest
 
 lint: ## Run the Ruff linter

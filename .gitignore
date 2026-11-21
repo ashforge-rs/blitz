@@ -59,3 +59,9 @@ infra/*.tfstate.backup
 infra/crash.log
 infra/override.tf
 infra/*_override.tf
+
+# SQLite databases (e.g. examples/todo, TODO_DB_PATH)
+*.db
+*.sqlite3
+*.db-wal
+*.db-shm

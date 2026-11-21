@@ -42,6 +42,7 @@ scopes:
   - domains # domain modules under src/domains/
   - services # FastAPI service instances under src/services/
   - example
+  - examples # standalone sample apps under examples/
   - deps # dependency upgrades
   - ci # CI/CD
 
