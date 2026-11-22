@@ -8,7 +8,7 @@ import typer
 from blitz_cli.project import ProjectError, find_root
 from blitz_cli.templates import TEMPLATES_DIR, TemplateError, available, load
 
-from .common import config, fail, state
+from .common import complete_templates, config, fail, state
 
 app = typer.Typer(help="The template sets generators render.", no_args_is_help=True)
 
@@ -39,7 +39,10 @@ def template_list(ctx: typer.Context) -> None:
 
 @app.command("show")
 def template_show(
-    ctx: typer.Context, name: Annotated[str, typer.Argument(help="Template set name.")]
+    ctx: typer.Context,
+    name: Annotated[
+        str, typer.Argument(help="Template set name.", autocompletion=complete_templates)
+    ],
 ) -> None:
     """Show a template set's placeholders and the files it generates (and where each comes from)."""
     try:

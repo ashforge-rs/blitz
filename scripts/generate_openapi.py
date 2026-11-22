@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from app import create_app
+from services.api.domains import DOMAINS
 
 
 def main() -> None:
@@ -27,7 +28,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    app = create_app()
+    app = create_app(domains=DOMAINS)  # without DOMAINS the schema has no domain routes
     schema = app.openapi()
 
     out = Path(args.out)

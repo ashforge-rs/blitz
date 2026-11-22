@@ -88,6 +88,8 @@ make cli ARGS="g endpoint orders cancel"        # service method + route + test 
 make cli ARGS="g hc s3"                         # health check, created and wired (g --help: all)
 make cli ARGS="add redis --domain orders"       # Redis store, settings, check, compose, dependency
 make doctor                                     # check the project's rules
+make routes                                     # every route: method, path, owner, auth
+make openapi-check REF=origin/master            # breaking API changes vs another branch
 make cli ARGS="domain list"                     # domains and the services serving them
 make cli ARGS="domain remove orders"            # delete a domain + tests, unregister it
 make service NAME=worker                        # new ASGI service under src/services/

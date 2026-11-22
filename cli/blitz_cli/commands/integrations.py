@@ -29,6 +29,8 @@ from .common import (
     DryRun,
     ServiceOpt,
     Tests,
+    complete_domains,
+    complete_integrations,
     config,
     fail,
     finish,
@@ -78,13 +80,17 @@ def _integrations(ctx: typer.Context) -> list[tuple[str, str]]:
 def add(
     ctx: typer.Context,
     name: Annotated[
-        str | None, typer.Argument(help="Integration, e.g. redis. Omit to list them.")
+        str | None,
+        typer.Argument(
+            help="Integration, e.g. redis. Omit to list them.", autocompletion=complete_integrations
+        ),
     ] = None,
     domain: Annotated[
         list[str] | None,
         typer.Option(
             "--domain",
             "-d",
+            autocompletion=complete_domains,
             help="Domain whose bootstrap() should use the integration's store instead of "
             "InMemoryStore. Repeatable; also works after the integration was added.",
         ),

@@ -5,7 +5,18 @@ from typing import TYPE_CHECKING, Annotated
 
 import typer
 
-from .commands import code, domain, extend, integrations, service, template
+from .commands import (
+    code,
+    domain,
+    extend,
+    integrations,
+    new,
+    openapi,
+    routes,
+    service,
+    template,
+    update,
+)
 from .commands import doctor as doctor_cmd
 from .commands.common import State
 from .commands.service import service_new
@@ -16,7 +27,9 @@ if TYPE_CHECKING:
 app = typer.Typer(
     help="Generate code from blitz's templates and manage domains, services and integrations.",
     no_args_is_help=True,
-    add_completion=False,
+    # `blitz --install-completion` (bash, zsh, fish, PowerShell); needs `blitz` on PATH:
+    # `uv tool install --editable ./cli` or `make cli-install`.
+    add_completion=True,
 )
 generate_app = typer.Typer(
     help="Generate code: `blitz g <generator> ...` (aliases in parentheses).", no_args_is_help=True
@@ -79,6 +92,10 @@ app.add_typer(template.app, name="template")
 app.command("add")(integrations.add)
 app.command("info")(doctor_cmd.info)
 app.command("doctor")(doctor_cmd.doctor)
+app.command("routes")(routes.routes)
+app.command("openapi")(openapi.openapi)
+app.command("new")(new.new)
+app.command("update")(update.update)
 
 
 def main() -> None:

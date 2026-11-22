@@ -15,6 +15,7 @@ for coding agents (Claude Code reads it through `CLAUDE.md`, Copilot through
 | `make service NAME=worker` | Scaffold a service: `main.py`, empty `domains.py`, `Dockerfile` |
 | `make cli ARGS="g <generator> ..."` | Generate code (`blitz g --help`): `endpoint`/`error-code` for an existing domain; `auth-provider`, `audit-backend`, `health-check`, `middleware`, `route`, `metric` (created *and* wired); `domain --no-crud` |
 | `make cli ARGS="add redis --domain orders"` | Wire an integration (`redis`, `postgres`): store, settings, `.env.example`, health check, compose, dependency |
+| `make routes` · `make openapi-check REF=origin/master` | Every route (method, path, owner, auth) · fail on breaking API changes |
 | `make doctor` | Fast check of the project's rules (contract, registration, tests, `.env.example`); `make verify` stays the gate |
 | `make fmt` / `make lint` | Auto-format / lint with Ruff |
 | `make test` · `test-unit` · `test-integration` · `test-fuzz` | All tests / one tier |

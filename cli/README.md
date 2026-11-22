@@ -81,6 +81,55 @@ in-memory store. Run it again with `--domain` to switch more domains.
 | `blitz service list` | Services and their domains |
 | `blitz template list` / `show <set>` | Template sets, placeholders, output files and where each comes from |
 
+## API tools
+
+| Command | Does |
+| --- | --- |
+| `blitz routes [--service s] [--domain d] [--all] [--json]` | Every route each service serves, built from the real app: method, path, owning domain, whether it depends on `get_auth_context` |
+| `blitz openapi [--service api] [-o openapi.json]` | Export the schema (domains included) |
+| `blitz openapi --diff origin/main [--check]` | Compare with the schema at a git ref and list changes, breaking first; `--check` exits 1 on a breaking one (`make openapi-check REF=...` in CI) |
+| `blitz openapi --against openapi.json [--check]` | The same against a committed schema file |
+
+Both build the app in the project's venv (`uv sync` first). `--diff REF` runs REF's `src/`
+with today's dependencies. **Breaking**: removed operations, 2xx responses or parameters;
+newly required parameters, bodies or body properties; a request that accepts fewer types or
+enum values; a response that drops a property, may omit one it always had, or returns new
+types or enum values. Everything else is listed as a non-breaking change.
+
+## Projects from the boilerplate: `blitz new` / `blitz update`
+
+```bash
+blitz new ../my-api --description "Orders API" --owner my-org [--python 3.15] [--examples]
+cd ../my-api && uv sync && make verify
+# … later, when the boilerplate has improved:
+blitz update [--to v0.3.0] [--dry-run]        # or `make update`
+```
+
+`new` copies the boilerplate at a commit (`--from <git url|path>`, `--ref`; default: the
+checkout this CLI belongs to, recorded by its `origin` URL) and renames it: package and
+lockfile, `OPENAPI_TITLE`, `OTEL_SERVICE_NAME`, Dockerfile labels, `infra/`, `CODEOWNERS`,
+README title; version 0.1.0; `--python` also moves `requires-python`, Ruff/mypy targets, base
+images and CI. `CHANGELOG.md` and `examples/` are left out; the example domain stays (it is
+the reference AGENTS.md and the tests use). The project is `git init`ed and committed, and
+`[tool.blitz.template]` in its `pyproject.toml` records the source, commit and answers.
+
+`update` renders the recorded commit and the new one with those answers and merges the
+difference: files the project never touched take the new version, files only the project
+changed stay, files both changed are merged line by line; overlapping edits get
+`<<<<<<< project` / `>>>>>>> template` markers and the command exits 1. It needs a clean git
+tree (`--allow-dirty` to skip), so `git diff` reviews the update and `git checkout .` undoes
+it. Then `uv lock && uv sync && make verify`.
+
+## Shell completion
+
+```bash
+make cli-install                  # uv tool install --editable ./cli: `blitz` on PATH
+blitz --install-completion        # bash, zsh, fish or PowerShell; restart the shell
+```
+
+Commands, options, and values complete: domain names (`g endpoint <TAB>`, `domain remove`,
+`add --domain`), services (`--service`), template sets and integrations.
+
 ## Configuration: `[tool.blitz]`
 
 ```toml

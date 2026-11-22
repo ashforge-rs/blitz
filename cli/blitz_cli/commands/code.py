@@ -23,7 +23,16 @@ from blitz_cli.edit import (
     parse,
 )
 
-from .common import DryRun, Tests, config, fail, finish, project, write_edit
+from .common import (
+    DryRun,
+    Tests,
+    complete_domains,
+    config,
+    fail,
+    finish,
+    project,
+    write_edit,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -114,7 +123,12 @@ def inspect_domain(proj: Project, name: str) -> DomainInfo:
 
 def endpoint(
     ctx: typer.Context,
-    domain: Annotated[str, typer.Argument(help="Existing domain package, e.g. orders.")],
+    domain: Annotated[
+        str,
+        typer.Argument(
+            help="Existing domain package, e.g. orders.", autocompletion=complete_domains
+        ),
+    ],
     name: Annotated[str, typer.Argument(help="snake_case action, e.g. cancel or search.")],
     method: Annotated[Method, typer.Option(help="HTTP method.")] = Method.post,
     collection: Annotated[
@@ -273,7 +287,12 @@ def endpoint(
 
 def error_code(
     ctx: typer.Context,
-    domain: Annotated[str, typer.Argument(help="Existing domain package, e.g. orders.")],
+    domain: Annotated[
+        str,
+        typer.Argument(
+            help="Existing domain package, e.g. orders.", autocompletion=complete_domains
+        ),
+    ],
     code: Annotated[str, typer.Argument(help="snake_case code, e.g. conflict or out_of_stock.")],
     status: Annotated[int, typer.Option(help="HTTP status the code maps to (400-599).")] = 400,
     dry_run: DryRun = False,

@@ -6,6 +6,9 @@ templates = "templates"      # project templates; replace built-in ones file by 
 default-service = "api"      # service new domains / providers are registered with
 tests = true                 # generate tests (`--no-tests` / `--tests` override it)
 ```
+
+``[tool.blitz.template]`` (written by ``blitz new``, read by ``blitz update``) records
+the template source, commit and answers; see ``blitz_cli.scaffold``.
 """
 
 import tomllib
@@ -17,7 +20,7 @@ from .templates import TEMPLATES_DIR
 if TYPE_CHECKING:
     from pathlib import Path
 
-KEYS = {"templates": str, "default-service": str, "tests": bool}
+KEYS = {"templates": str, "default-service": str, "tests": bool, "template": dict}
 
 
 class ConfigError(Exception):

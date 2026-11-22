@@ -14,6 +14,7 @@ from .common import (
     Tests,
     Yes,
     ask,
+    complete_domains,
     confirm,
     fail,
     finish,
@@ -149,7 +150,9 @@ def domain_list(ctx: typer.Context) -> None:
 @app.command("remove")
 def domain_remove(
     ctx: typer.Context,
-    name: Annotated[str, typer.Argument(help="Domain package to delete.")],
+    name: Annotated[
+        str, typer.Argument(help="Domain package to delete.", autocompletion=complete_domains)
+    ],
     yes: Yes = False,
 ) -> None:
     """Delete a domain package and its tests, and unregister it from every service."""

@@ -41,7 +41,11 @@ Tests = Annotated[
 ]
 ServiceOpt = Annotated[
     str | None,
-    typer.Option(help="Service to register with.", show_default="[tool.blitz] default-service"),
+    typer.Option(
+        help="Service to register with.",
+        show_default="[tool.blitz] default-service",
+        autocompletion=lambda incomplete: complete_services(incomplete),
+    ),
 ]
 
 
@@ -192,3 +196,54 @@ def finish(ctx: typer.Context, written: list[Path], next_step: str = "") -> None
         warn(warning)
     if next_step:
         typer.echo(f"\nNext: {next_step}")
+
+
+# ── shell completion (`blitz --install-completion`) ──────────────────────────
+
+
+def _completion_project() -> Project | None:
+    try:
+        return Project(find_root(Path.cwd()))
+    except ProjectError:
+        return None
+
+
+def _matching(names: list[str], incomplete: str) -> list[str]:
+    return [n for n in names if n.startswith(incomplete)]
+
+
+def complete_domains(incomplete: str) -> list[str]:
+    proj = _completion_project()
+    return _matching(proj.domains(), incomplete) if proj else []
+
+
+def complete_services(incomplete: str) -> list[str]:
+    proj = _completion_project()
+    return _matching(proj.services(), incomplete) if proj else []
+
+
+def _template_names() -> list[str]:
+    from blitz_cli.templates import TEMPLATES_DIR, available
+
+    proj = _completion_project()
+    dirs = [TEMPLATES_DIR]
+    if proj is not None:
+        try:
+            dirs = load_config(proj.root).template_dirs
+        except ConfigError:
+            pass
+    try:
+        return [t.name for t in available(dirs)]
+    except TemplateError:
+        return []
+
+
+def complete_templates(incomplete: str) -> list[str]:
+    return _matching(_template_names(), incomplete)
+
+
+def complete_integrations(incomplete: str) -> list[str]:
+    names = [
+        n.removeprefix("integration-") for n in _template_names() if n.startswith("integration-")
+    ]
+    return _matching(names, incomplete)
