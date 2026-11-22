@@ -214,9 +214,11 @@ def transform(path: str, text: str, a: Answers, t: Identity) -> str:
         text = text.replace("(+ examples/, cli/)", "(+ cli/)")
     elif path == "AGENTS.md" and not a.examples:
         text = re.sub(
-            r"the reference implementations are\n`examples/todo/` \(full\) and `examples/consent/` \(lean\)\.",
+            r"the reference implementations are\n"
+            r"`examples/todo/` \(full\) and `examples/consent/` \(lean\)\.",
             lambda _: (
-                "the reference implementations\n(todo: full, consent: lean) are in the boilerplate's examples directory."
+                "the reference implementations\n(todo: full, consent: lean) "
+                "are in the boilerplate's examples directory."
             ),
             text,
         )
