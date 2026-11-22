@@ -1,13 +1,17 @@
 """``blitz`` — generate code from the predefined templates and manage the project's boilerplate."""
 
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
+from . import fields as fields_mod
 from . import naming
 from .project import Project, ProjectError, find_root, tidy
 from .templates import TemplateError, available, load
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 app = typer.Typer(
     help="Generate code from blitz's templates and manage domains and services.",
@@ -80,23 +84,39 @@ def _generate(
 # ── domain ───────────────────────────────────────────────────────────────────
 
 
-@domain_app.command("new")
-def domain_new(
-    ctx: typer.Context,
-    name: Annotated[str, typer.Argument(help="snake_case package name, e.g. orders.")],
-    entity: Annotated[
-        str | None,
-        typer.Option(help="PascalCase entity class.", show_default="singular of NAME"),
-    ] = None,
-    service: Annotated[str, typer.Option(help="Service to register the domain with.")] = "api",
-    register: Annotated[
-        bool, typer.Option("--register/--no-register", help="Add it to the service's DOMAINS.")
-    ] = True,
-    dry_run: DryRun = False,
+FieldsOpt = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--field",
+        "-f",
+        help="Entity field as name:type, `?` for optional (title:str, notes:str?). Repeatable. "
+        f"Types: {', '.join(fields_mod.TYPES)}.",
+        show_default="name:str",
+    ),
+]
+
+
+def _parse_fields(specs: list[str] | None) -> list[fields_mod.EntityField]:
+    if not specs:
+        return list(fields_mod.DEFAULT_FIELDS)
+    try:
+        parsed = [fields_mod.parse(spec) for spec in specs]
+        fields_mod.check_fields(parsed)
+    except fields_mod.FieldError as exc:
+        raise _fail(str(exc)) from exc
+    return parsed
+
+
+def _create_domain(
+    project: Project,
+    name: str,
+    entity: str,
+    service: str,
+    entity_fields: list[fields_mod.EntityField],
+    *,
+    register: bool,
+    dry_run: bool,
 ) -> None:
-    """Scaffold a domain package and its tests from the `domain` template, and register it."""
-    project = _project(ctx)
-    entity = entity or naming.default_entity(name)
     error = naming.check_name(name, "domain") or naming.check_entity(entity)
     if error:
         raise _fail(error)
@@ -105,7 +125,7 @@ def domain_new(
     if register and not project.registry(service).exists():
         raise _fail(f"service {service!r} not found (src/services/{service}/domains.py)")
 
-    values = naming.domain_values(name, entity, service)
+    values = naming.domain_values(name, entity, service, entity_fields)
     written = _generate(project, "domain", values, dry_run=dry_run)
     if register:
         if dry_run:
@@ -119,6 +139,110 @@ def domain_new(
     if warning := tidy(project.root, written):
         _warn(warning)
     typer.echo(f"\nNext: customise, then `make verify`; routes are served at /v1/{values['route']}")
+
+
+@domain_app.command("new")
+def domain_new(
+    ctx: typer.Context,
+    name: Annotated[str, typer.Argument(help="snake_case package name, e.g. orders.")],
+    entity: Annotated[
+        str | None,
+        typer.Option(help="PascalCase entity class.", show_default="singular of NAME"),
+    ] = None,
+    field: FieldsOpt = None,
+    service: Annotated[str, typer.Option(help="Service to register the domain with.")] = "api",
+    register: Annotated[
+        bool, typer.Option("--register/--no-register", help="Add it to the service's DOMAINS.")
+    ] = True,
+    dry_run: DryRun = False,
+) -> None:
+    """Scaffold a domain package and its tests from the `domain` template, and register it."""
+    project = _project(ctx)
+    entity = entity or naming.default_entity(name)
+    _create_domain(
+        project, name, entity, service, _parse_fields(field), register=register, dry_run=dry_run
+    )
+
+
+# ── crud (entity-first, with a wizard) ───────────────────────────────────────
+
+
+def _ask(text: str, check: Callable[[str], str | None], default: str | None = None) -> str:
+    """Prompt until ``check`` accepts the answer (it returns an error message or None)."""
+    while True:
+        answer = str(typer.prompt(text, default=default)).strip()
+        error = check(answer)
+        if error is None:
+            return answer
+        typer.secho(f"  {error}", fg=typer.colors.RED, err=True)
+
+
+def _ask_fields() -> list[fields_mod.EntityField]:
+    typer.echo(f"Fields (blank name to finish). Types: {', '.join(fields_mod.TYPES)}")
+    collected: list[fields_mod.EntityField] = []
+
+    def check_name(answer: str) -> str | None:
+        if not answer:
+            return None if collected else "add at least one field"
+        if any(f.name == answer for f in collected):
+            return f"{answer!r} is already a field"
+        return fields_mod.check_field_name(answer)
+
+    def check_type(answer: str) -> str | None:
+        return None if answer in fields_mod.TYPES else f"use one of {', '.join(fields_mod.TYPES)}"
+
+    while name := _ask("  Field name", check_name, default=""):
+        type_ = _ask("  Type", check_type, default="str")
+        required = typer.confirm("  Required?", default=True)
+        collected.append(fields_mod.EntityField(name, type_, required))
+    return collected
+
+
+@app.command("crud")
+def crud(
+    ctx: typer.Context,
+    entity: Annotated[
+        str | None,
+        typer.Argument(help="PascalCase entity, e.g. Product. Omit it to run the wizard."),
+    ] = None,
+    field: FieldsOpt = None,
+    domain: Annotated[
+        str | None, typer.Option(help="Domain package.", show_default="plural of ENTITY")
+    ] = None,
+    service: Annotated[str, typer.Option(help="Service to register the domain with.")] = "api",
+    dry_run: DryRun = False,
+) -> None:
+    """Generate an entity and its CRUD API (a new domain). Asks for whatever is not given.
+
+    The questions are kept basic: name, fields, types, required. Add validation,
+    defaults and business rules to the generated code afterwards.
+    """
+    project = _project(ctx)
+    wizard = entity is None
+    if entity is None:
+        entity = _ask("Entity name (PascalCase, e.g. Product)", naming.check_entity)
+    elif error := naming.check_entity(entity):
+        raise _fail(error)
+    if domain is None:
+        default = naming.plural(naming.snake(entity))
+        domain = (
+            _ask("Domain package", lambda a: naming.check_name(a, "domain"), default=default)
+            if wizard
+            else default
+        )
+    services = project.services()
+    if wizard and len(services) > 1:
+        service = _ask(
+            "Service", lambda a: None if a in services else f"one of {services}", default=service
+        )
+    entity_fields = _parse_fields(field) if field else _ask_fields()
+
+    if field is None:  # anything was asked: confirm before writing
+        specs = ", ".join(f.spec for f in entity_fields)
+        typer.echo(f"\n{entity} ({specs}) → src/domains/{domain}/, served by {service}")
+        if not typer.confirm("Generate?", default=True):
+            raise typer.Abort
+    _create_domain(project, domain, entity, service, entity_fields, register=True, dry_run=dry_run)
 
 
 @domain_app.command("list")

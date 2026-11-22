@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev domain service cli verify lint fmt check test test-unit test-integration test-fuzz coverage openapi docker-build docker-push docker-run clean
+.PHONY: help install dev domain crud service cli verify lint fmt check test test-unit test-integration test-fuzz coverage openapi docker-build docker-push docker-run clean
 
 # ── Multi-service layout ──────────────────────────────────────────────────────
 # Each service lives under src/services/<name>/ (main.py + Dockerfile) and
@@ -30,6 +30,9 @@ domain: ## Scaffold a domain + tests and register it (DOMAIN=orders [ENTITY=Orde
 	@test "$(origin DOMAIN)" = "command line" || \
 		(echo "usage: make domain DOMAIN=<snake_case> [ENTITY=<PascalCase>] [SERVICE=api]" && exit 1)
 	$(BLITZ) domain new $(DOMAIN) --service $(SERVICE) $(if $(ENTITY),--entity $(ENTITY))
+
+crud: ## Wizard: an entity + its CRUD API as a new domain (ask name, fields, types)
+	$(BLITZ) crud
 
 service: ## Scaffold a service: main.py, domains.py, Dockerfile (NAME=worker)
 	@test "$(origin NAME)" = "command line" || (echo "usage: make service NAME=<snake_case>" && exit 1)

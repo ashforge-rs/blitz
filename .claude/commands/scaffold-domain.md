@@ -13,6 +13,8 @@ Run the generator — do not hand-write the files:
 ```bash
 make domain DOMAIN=<name> [ENTITY=<Entity>] [SERVICE=api]
 # same as: uv run --project cli blitz domain new <name> [--entity <Entity>] [--service api]
+# with real fields (types: str int float bool date datetime uuid; `?` = optional):
+uv run --project cli blitz domain new <name> --entity <Entity> -f title:str -f price:float -f notes:str?
 ```
 
 It creates:
@@ -37,7 +39,7 @@ taken, invalid name, unknown service), report that to the user instead of workin
 
 Adapt the generated code to what the user described:
 
-- **Models** — replace the placeholder `name` field with the real fields and validators.
+- **Models** — pass the real fields with `-f` when generating; add validators and defaults here.
 - **Errors** — add codes (e.g. `CONFLICT`) and map each to a status in `STATUS`. 5xx codes
   never expose their `message` to clients.
 - **Service** — add business rules. Keep every method returning `Result[T, <Entity>Error]` and

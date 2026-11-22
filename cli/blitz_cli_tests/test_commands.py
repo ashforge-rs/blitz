@@ -110,3 +110,71 @@ def test_outside_project(tmp_path, monkeypatch):
     result = CliRunner().invoke(app, ["domain", "list"])
     assert result.exit_code == 1
     assert "no blitz project" in result.output
+
+
+# ── crud ─────────────────────────────────────────────────────────────────────
+
+
+def test_crud_with_flags_generates_fields(blitz, root):
+    result = blitz("crud", "Product", "-f", "title:str", "-f", "price:float", "-f", "notes:str?")
+    assert result.exit_code == 0, result.output
+    models = (root / "src/domains/products/models.py").read_text()
+    assert "    title: str\n    price: float\n    notes: str | None = None\n" in models
+    assert "class CreateProductRequest(BaseModel):" in models
+    assert "**request.model_dump()" in (root / "src/domains/products/service.py").read_text()
+    assert Project(root).registered("api") == ["example", "products"]
+
+
+def test_crud_rejects_bad_field(blitz, root):
+    result = blitz("crud", "Product", "-f", "id:str")
+    assert result.exit_code == 1
+    assert "reserved" in result.output
+    assert not (root / "src/domains").exists()
+
+
+def test_crud_wizard(blitz, root):
+    answers = [
+        "Category",  # entity
+        "",  # domain: accept "categories"
+        "label",  # field 1
+        "",  # type: str
+        "",  # required: yes
+        "rank",
+        "number",  # not a type: asked again
+        "int",
+        "n",  # optional
+        "",  # done
+        "",  # generate: yes
+    ]
+    result = blitz("crud", input="\n".join(answers) + "\n")
+    assert result.exit_code == 0, result.output
+    assert "Category (label:str, rank:int?) → src/domains/categories/" in result.output
+    models = (root / "src/domains/categories/models.py").read_text()
+    assert "    label: str\n    rank: int | None = None\n" in models
+
+
+def test_crud_wizard_asks_service_when_there_are_several(blitz, root):
+    blitz("service", "new", "worker")
+    result = blitz("crud", input="Tag\n\nworker\nlabel\n\n\n\n\n")
+    assert result.exit_code == 0, result.output
+    assert Project(root).registered("worker") == ["tags"]
+
+
+def test_crud_wizard_needs_a_field_and_can_be_declined(blitz, root):
+    result = blitz("crud", input="Tag\n\n\nlabel\n\n\n\nn\n")
+    assert "add at least one field" in result.output
+    assert result.exit_code == 1  # declined at "Generate?"
+    assert not (root / "src/domains/tags").exists()
+
+
+def test_crud_entity_given_asks_only_for_fields(blitz, root):
+    result = blitz("crud", "Tag", "--dry-run", input="label\n\n\n\n\n")
+    assert result.exit_code == 0, result.output
+    assert "Domain package" not in result.output
+    assert "would create src/domains/tags/models.py" in result.output
+    assert not (root / "src/domains").exists()
+
+
+def test_domain_new_accepts_fields(blitz, root):
+    assert blitz("domain", "new", "orders", "-f", "total:float").exit_code == 0
+    assert "    total: float\n" in (root / "src/domains/orders/models.py").read_text()

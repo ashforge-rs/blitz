@@ -1,5 +1,4 @@
-from datetime import UTC, datetime
-
+${model_imports}
 from pydantic import BaseModel, Field
 
 
@@ -7,7 +6,7 @@ class $Entity(BaseModel):
     """Persisted $entity_words."""
 
     id: str
-    name: str
+$model_fields
     created_by: str | None = None
     updated_by: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -15,10 +14,10 @@ class $Entity(BaseModel):
 
 
 class Create${Entity}Request(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
+$create_fields
 
 
 class Update${Entity}Request(BaseModel):
     """All fields optional — only the ones sent are changed."""
 
-    name: str | None = Field(default=None, min_length=1, max_length=255)
+$update_fields

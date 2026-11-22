@@ -1,4 +1,4 @@
-import asyncio
+${fuzz_imports}import asyncio
 from unittest.mock import MagicMock
 
 from hypothesis import given
@@ -11,7 +11,7 @@ from domains.$name.repository import ${Entity}Repository
 from domains.$name.service import ${Entity}Service
 from store.memory import InMemoryStore
 
-names = st.text(min_size=1, max_size=255).filter(str.strip)
+bodies = $fuzz_strategy
 
 
 def _service() -> ${Entity}Service:
@@ -23,12 +23,12 @@ def _service() -> ${Entity}Service:
     )
 
 
-@given(name=names)
-def test_create_then_get_roundtrip(name: str) -> None:
+@given(body=bodies)
+def test_create_then_get_roundtrip(body: dict[str, object]) -> None:
     async def run() -> None:
         svc, ctx = _service(), MagicMock()
         ctx.get.return_value = None
-        created = (await svc.create(Create${Entity}Request(name=name), ctx)).unwrap()
-        assert (await svc.get(created.id, ctx)).unwrap().name == name
+        created = (await svc.create(Create${Entity}Request.model_validate(body), ctx)).unwrap()
+        assert (await svc.get(created.id, ctx)).unwrap() == created
 
     asyncio.run(run())

@@ -29,12 +29,23 @@ def test_check_entity_rejects(bad):
 
 def test_domain_values():
     values = naming.domain_values("user_profiles", "UserProfile", "worker")
-    assert values == {
-        "name": "user_profiles",
-        "service": "worker",
-        "route": "user-profiles",
-        "Plural": "UserProfiles",
-        "Entity": "UserProfile",
-        "entity": "user_profile",
-        "entity_words": "user profile",
-    }
+    assert (
+        values.items()
+        >= {
+            "name": "user_profiles",
+            "service": "worker",
+            "route": "user-profiles",
+            "Plural": "UserProfiles",
+            "Entity": "UserProfile",
+            "entity": "user_profile",
+            "entity_words": "user profile",
+        }.items()
+    )
+
+
+@pytest.mark.parametrize(
+    ("singular", "plural"),
+    [("product", "products"), ("category", "categories"), ("box", "boxes"), ("day", "days")],
+)
+def test_plural(singular, plural):
+    assert naming.plural(singular) == plural

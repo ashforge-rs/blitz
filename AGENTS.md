@@ -11,6 +11,7 @@ for coding agents (Claude Code reads it through `CLAUDE.md`, Copilot through
 | --- | --- |
 | `make verify` | **Run before saying work is done.** Format check, lint, mypy, tests; changes nothing |
 | `make domain DOMAIN=orders [ENTITY=Order]` | Scaffold a domain + tests and register it |
+| `make cli ARGS="crud Product -f title:str -f price:float"` | A domain for an entity with real fields (`make crud` is the interactive wizard; agents pass `-f`) |
 | `make service NAME=worker` | Scaffold a service: `main.py`, empty `domains.py`, `Dockerfile` |
 | `make cli ARGS="domain list"` | Run the `blitz` generator CLI (`domain new/list/remove`, `service new/list`, `template list/show`) |
 | `make fmt` / `make lint` | Auto-format / lint with Ruff |

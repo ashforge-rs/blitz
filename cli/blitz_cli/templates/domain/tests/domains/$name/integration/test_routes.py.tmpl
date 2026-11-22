@@ -5,6 +5,7 @@ from httpx import AsyncClient
 from services.$service.domains import DOMAINS
 
 BASE = "/v1/$route"
+SAMPLE = $sample
 
 
 @pytest.fixture
@@ -14,12 +15,13 @@ def app(make_app) -> FastAPI:
 
 
 async def test_crud_roundtrip(client: AsyncClient) -> None:
-    created = await client.post(f"{BASE}/", json={"name": "a"})
+    created = await client.post(f"{BASE}/", json=SAMPLE)
     assert created.status_code == 201
     ${entity}_id = created.json()["id"]
 
-    assert (await client.get(f"{BASE}/{${entity}_id}")).json()["name"] == "a"
-    assert (await client.patch(f"{BASE}/{${entity}_id}", json={"name": "b"})).json()["name"] == "b"
+    assert (await client.get(f"{BASE}/{${entity}_id}")).json()["$first_field"] == $first_create
+    updated = await client.patch(f"{BASE}/{${entity}_id}", json=$sample_update)
+    assert updated.json()["$first_field"] == $first_update
     assert (await client.delete(f"{BASE}/{${entity}_id}")).status_code == 204
 
 
@@ -31,4 +33,4 @@ async def test_missing_is_problem_404(client: AsyncClient) -> None:
 
 
 async def test_invalid_body_is_422(client: AsyncClient) -> None:
-    assert (await client.post(f"{BASE}/", json={"name": ""})).status_code == 422
+    assert (await client.post(f"{BASE}/", json=$invalid_body)).status_code == 422

@@ -10,7 +10,9 @@ uv run --project cli blitz --help      # from the repository root (or `make cli 
 
 | Command | Does |
 | --- | --- |
-| `blitz domain new <name> [--entity E] [--service api] [--no-register] [--dry-run]` | Render the `domain` template into `src/domains/<name>/` + `tests/domains/<name>/`, add it to the service's `DOMAINS` |
+| `blitz domain new <name> [--entity E] [-f field:type ...] [--service api] [--no-register] [--dry-run]` | Render the `domain` template into `src/domains/<name>/` + `tests/domains/<name>/`, add it to the service's `DOMAINS` |
+| `blitz crud` | **Wizard**: asks the entity name, domain, service (if several) and fields (name, type, required), then generates the CRUD domain |
+| `blitz crud <Entity> -f title:str -f price:float -f notes:str?` | Same without questions; `?` marks a field optional |
 | `blitz domain list` | Domains, the services serving them, whether they have tests |
 | `blitz domain remove <name> [--yes]` | Delete the package and its tests; unregister it from every service |
 | `blitz service new <name> [--dry-run]` | Render the `service` template into `src/services/<name>/` |
@@ -22,6 +24,14 @@ The project root is the nearest directory above the current one with `pyproject.
 replace a file stops before writing. Generated Python is import-sorted and formatted with the
 project's Ruff config.
 
+## Entities and fields
+
+Field types: `str`, `int`, `float`, `bool`, `date`, `datetime`, `uuid`; without `--field` an
+entity gets one `name: str`. Each field appears in the persisted model, the create request
+(required unless `?`; `str` is 1–255 characters) and the update request (always optional),
+and the generated unit, integration and fuzz tests exercise them all. The wizard keeps to
+these basics on purpose: add validators, defaults, enums or relations to the generated code.
+
 ## Templates
 
 `blitz_cli/templates/<set>/` mirrors the project layout. Every `*.tmpl` file is rendered with
@@ -31,7 +41,7 @@ Python's `string.Template`: `$name` / `${Entity}` placeholders in both the path 
 
 | Set | Placeholders |
 | --- | --- |
-| `domain` | `name`, `route`, `Plural`, `Entity`, `entity`, `entity_words`, `service` |
+| `domain` | `name`, `route`, `Plural`, `Entity`, `entity`, `entity_words`, `service`; field snippets from `blitz_cli/fields.py` (`model_fields`, `create_fields`, `update_fields`, `sample`, `fuzz_strategy`, …) |
 | `service` | `service` |
 
 To change what every new domain or service starts with, edit its template; a test checks

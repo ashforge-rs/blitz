@@ -78,7 +78,7 @@ class ${Entity}Service(Service):
     ) -> Result[$Entity, ${Entity}Error]:
         $entity = $Entity(
             id=str(uuid.uuid4()),
-            name=request.name,
+            **request.model_dump(),
             created_by=self._principal(ctx),
             updated_by=self._principal(ctx),
         )
