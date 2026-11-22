@@ -130,12 +130,15 @@ def _sqlite_engine(url: str) -> AsyncEngine:
     async def open_connection() -> aiosqlite.Connection:
         cargs, cparams = connect_args
         connection = aiosqlite.connect(*cargs, **cparams)
-        connection._thread.daemon = True  # as SQLAlchemy's own aiosqlite connect does
+        # `_thread` is private: if a later aiosqlite drops it, this is a plain connect.
+        thread = getattr(connection, "_thread", None)
+        if thread is not None:
+            thread.daemon = True  # as SQLAlchemy's own aiosqlite connect does
         try:
             return await connection
         except BaseException:
-            if connection._thread.is_alive():
-                await asyncio.to_thread(connection._thread.join, 5)
+            if thread is not None and thread.is_alive():
+                await asyncio.to_thread(thread.join, 5)
             raise
 
     engine = create_async_engine(url, async_creator=open_connection)
