@@ -11,6 +11,7 @@ from todo_app.persistence import open_context_runtime
 
 from .adapters.observed_user_telemetry import ObservedUserTelemetry
 from .adapters.sql_migrations import MIGRATIONS
+from .adapters.sql_reporting import publish_user_metrics
 from .adapters.sql_tables import audit_outbox, idempotency
 from .adapters.sql_users_unit_of_work import SqlUsersUnitOfWorkFactory
 from .use_cases import AuthenticateToken, RegisterUser
@@ -60,6 +61,12 @@ async def build_users(
         audit_integrity=audit_integrity,
         poll_outbox=poll_outbox,
     )
+    if poll_outbox:  # long-running process: keep the business metrics fresh
+        runtime.every(
+            settings.METRICS_REFRESH_SECONDS,
+            "business-metrics",
+            lambda: publish_user_metrics(runtime.db),
+        )
     uow = SqlUsersUnitOfWorkFactory(runtime.db)
     telemetry = ObservedUserTelemetry()
     clock, ids = SystemClock(), Uuid7Ids()

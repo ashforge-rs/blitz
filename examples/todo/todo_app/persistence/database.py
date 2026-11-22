@@ -1,10 +1,10 @@
 import contextlib
 from typing import TYPE_CHECKING, Any, Self
 
-from sqlalchemy import event, text
+from sqlalchemy import Delete, Insert, Update, event, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
-from todo_app.kernel import StorageUnavailableError
+from todo_app.kernel import ReadOnlyUnitOfWorkError, StorageUnavailableError
 
 from .errors import translate_storage_errors
 
@@ -49,6 +49,7 @@ class Database:
                 pool_timeout=connect_timeout_s,
                 pool_pre_ping=True,  # a connection the server dropped is replaced, not used
             )
+        _refuse_writes_when_read_only(engine)
         db = cls(engine)
         try:
             async with db.transaction(read_only=True) as conn:
@@ -79,6 +80,21 @@ class Database:
     async def close(self) -> None:
         self._closed = True
         await self._engine.dispose()
+
+
+def _refuse_writes_when_read_only(engine: AsyncEngine) -> None:
+    """The same rule on every dialect: a read-only unit of work cannot write.
+
+    (Postgres would refuse too, being ``READ ONLY``; SQLite would silently drop it.)
+    """
+
+    @event.listens_for(engine.sync_engine, "before_execute")
+    def _check(conn: Any, clause: Any, *_args: Any) -> None:
+        if conn.get_execution_options().get("read_only") and isinstance(
+            clause, Insert | Update | Delete
+        ):
+            msg = "write attempted in a read-only unit of work"
+            raise ReadOnlyUnitOfWorkError(msg)
 
 
 def _configure_sqlite(engine: AsyncEngine, busy_timeout_ms: int) -> None:

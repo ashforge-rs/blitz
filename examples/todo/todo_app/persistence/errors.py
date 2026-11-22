@@ -33,8 +33,9 @@ _SQLITE_UNAVAILABLE = (
 )
 #: Postgres SQLSTATEs (prefixes) meaning the same: connection exceptions,
 #: insufficient resources, operator intervention / shutdown, lock timeouts,
-#: serialization failures and deadlocks (both safe to retry), statement timeouts.
-_POSTGRES_UNAVAILABLE = ("08", "53", "57P", "55P03", "40001", "40P01", "57014")
+#: serialization failures and deadlocks (both safe to retry), statement timeouts; and a
+#: misconfigured database (bad credentials 28xxx, missing database 3D000).
+_POSTGRES_UNAVAILABLE = ("08", "53", "57P", "55P03", "40001", "40P01", "57014", "28", "3D000")
 
 
 def _code(exc: DBAPIError) -> str:
@@ -64,7 +65,8 @@ def translate_storage_errors() -> Iterator[None]:
         yield
     except Exception as exc:
         if is_unavailable(exc):
-            raise StorageUnavailableError(str(exc)) from exc
+            message = str(exc) or f"could not reach the database ({type(exc).__name__})"
+            raise StorageUnavailableError(message) from exc
         raise
 
 

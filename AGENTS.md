@@ -92,8 +92,9 @@ reason phrase; the message is logged. Outside domains, raise `AppError` subclass
 Domains are **flat by default** (the table above). For a *high-integrity* service, use the
 layered pattern instead: no lost or half-applied writes, a complete audit trail, idempotent
 retries, or several interfaces over the same rules. The criteria are in
-`docs/adr/0001-layered-high-integrity-pattern.md`, and the reference implementation is
-`examples/todo/`. Use one pattern throughout a service, and don't mix the two.
+`docs/adr/0001-layered-high-integrity-pattern.md`; the reference implementations are
+`examples/todo/` (full) and `examples/consent/` (lean). Use one pattern throughout a service,
+and don't mix the two.
 
 ## Gotchas
 

@@ -1,0 +1,49 @@
+# Local observability for the examples: Postgres (one database per app), Prometheus and
+# Grafana with both dashboards provisioned.  The apps run on the host (make todo,
+# make consent); Prometheus reaches them through host-gateway.  See README.md.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: examples
+      POSTGRES_PASSWORD: examples
+      POSTGRES_DB: examples
+    # 55432 on the host: 5432 is often taken by a locally installed Postgres.
+    ports: ["55432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U examples -d examples"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../todo/grafana/alerts.yml:/etc/prometheus/rules/todo-alerts.yml:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"  # local only: browse without logging in
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../todo/grafana:/var/lib/grafana/dashboards/todo:ro
+      - ../consent/grafana:/var/lib/grafana/dashboards/consent:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus, postgres]
+
+volumes:
+  postgres-data:

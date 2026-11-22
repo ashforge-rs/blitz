@@ -11,6 +11,8 @@ from .outbox_relay import OutboxRelay
 from .sql_idempotency_store import purge_expired
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from audit.backend import AuditBackend, AuditIntegrity
     from sqlalchemy import Table
 
@@ -37,20 +39,27 @@ class ContextRuntime:
         self.relay = relay
         self._idempotency = idempotency
         self._clock = clock or SystemClock()
-        self._housekeeping: asyncio.Task[None] | None = None
+        self._tasks: list[asyncio.Task[None]] = []
 
-    def start_housekeeping(self, interval_s: float) -> None:
-        """Purge expired idempotency records every ``interval_s`` (long-running processes)."""
+    def every(self, interval_s: float, name: str, job: Callable[[], Awaitable[object]]) -> None:
+        """Run ``job`` now and then every ``interval_s`` until the runtime closes.
+
+        A failing run is logged and retried next time: background work must not die.
+        """
 
         async def _loop() -> None:
             while True:
                 try:
-                    await self.purge_expired_idempotency()
+                    await job()
                 except Exception as exc:  # noqa: BLE001 — a background task must not die
-                    logger.warning("idempotency.purge_failed", context=self.name, error=str(exc))
+                    logger.warning("background.job_failed", job=name, error=str(exc))
                 await asyncio.sleep(interval_s)
 
-        self._housekeeping = asyncio.create_task(_loop(), name=f"housekeeping:{self.name}")
+        self._tasks.append(asyncio.create_task(_loop(), name=f"{self.name}:{name}"))
+
+    def start_housekeeping(self, interval_s: float) -> None:
+        """Purge expired idempotency records every ``interval_s`` (long-running processes)."""
+        self.every(interval_s, "idempotency-purge", self.purge_expired_idempotency)
 
     async def purge_expired_idempotency(self) -> int:
         cutoff = self._clock.now() - IDEMPOTENCY_TTL
@@ -76,10 +85,10 @@ class ContextRuntime:
         }
 
     async def aclose(self) -> None:
-        if self._housekeeping is not None:
-            self._housekeeping.cancel()
+        for task in self._tasks:
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await self._housekeeping
+                await task
         await self.relay.aclose()  # deliver what's pending before the connection goes
         await self.db.close()
 

@@ -1,0 +1,81 @@
+[project]
+name = "consent-app"
+version = "0.1.0"
+description = "Example service on blitz: consent management with a regulation-neutral core and a GDPR profile"
+requires-python = ">=3.15"
+dependencies = [
+  "blitz",
+  "sqlalchemy[asyncio]>=2.0.40",
+  "alembic>=1.16",
+  "aiosqlite>=0.21",
+  "asyncpg>=0.30",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=9.2.0",
+  "pytest-asyncio>=1.5.0",
+  "pytest-cov>=7.1.0",
+  "httpx>=0.28.1",
+  "asgi-lifespan>=2.1.0",
+  "hypothesis>=6.170.16",
+  "mypy>=2.4.1",
+  "ruff>=0.17.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["consent_app"]
+
+[tool.uv]
+required-version = "~=0.13.7"
+
+[tool.uv.sources]
+# The boilerplate, from this repository (editable: changes to src/ apply at once).
+blitz = { path = "../..", editable = true }
+
+# ── Ruff: blitz's rules, this project's paths ────────────────────────────────
+[tool.ruff]
+extend = "../../pyproject.toml"
+src = ["."]
+
+[tool.ruff.lint.per-file-ignores]
+"consent_tests/**" = ["ANN", "ERA", "TRY", "EM", "PTH", "TCH", "S101"]
+"conftest.py" = ["ANN", "ERA", "TRY", "EM", "PTH", "TCH", "S101"]
+# FastAPI resolves route/dependency annotations at runtime: imports must stay real.
+"consent_app/domain.py" = ["TC"]
+"consent_app/adapters/http/*.py" = ["TC"]
+"consent_app/adapters/auth.py" = ["TC"]
+# Alembic environments and revisions are scripts Alembic executes, not app modules.
+"consent_app/adapters/sql/migrations/**" = ["TC"]
+
+# ── mypy ─────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.15"
+# blitz ships no py.typed marker, so type-check it from source.
+mypy_path = "../../src"
+explicit_package_bases = true
+strict = true
+warn_unreachable = true
+warn_return_any = true
+
+# ── pytest ───────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["consent_tests"]
+addopts = "-q --no-header --strict-markers --strict-config"
+xfail_strict = true
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["consent_app"]
+omit = ["consent_app/main.py"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "@abstractmethod"]

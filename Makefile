@@ -36,6 +36,7 @@ verify: ## Check everything without changing files: format, lint, types, tests (
 	uv run mypy src/
 	uv run pytest
 	$(MAKE) -C examples/todo verify
+	$(MAKE) -C examples/consent verify
 
 lint: ## Run the Ruff linter
 	uv run ruff check $(PY_DIRS)

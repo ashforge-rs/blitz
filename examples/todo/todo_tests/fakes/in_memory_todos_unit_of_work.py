@@ -3,7 +3,12 @@ from typing import TYPE_CHECKING
 
 from todo_app.todos.ports import TodoRepository, TodosUnitOfWork, TodosUnitOfWorkFactory
 
-from .in_memory_unit_of_work import InMemoryState, InMemoryUnitOfWork, InMemoryUnitOfWorkFactory
+from .in_memory_unit_of_work import (
+    InMemoryState,
+    InMemoryUnitOfWork,
+    InMemoryUnitOfWorkFactory,
+    refuse_if_read_only,
+)
 
 if TYPE_CHECKING:
     from todo_app.todos.entities import Todo
@@ -27,14 +32,16 @@ class InMemoryTodosUnitOfWorkFactory(InMemoryUnitOfWorkFactory[TodosState], Todo
 class InMemoryTodosUnitOfWork(InMemoryUnitOfWork[TodosState], TodosUnitOfWork):
     @property
     def todos(self) -> InMemoryTodoRepository:
-        return InMemoryTodoRepository(self._work)
+        return InMemoryTodoRepository(self._work, read_only=self._read_only)
 
 
 class InMemoryTodoRepository(TodoRepository):
-    def __init__(self, state: TodosState) -> None:
+    def __init__(self, state: TodosState, *, read_only: bool) -> None:
         self._s = state
+        self._read_only = read_only
 
     async def add(self, todo: Todo) -> None:
+        refuse_if_read_only(self._read_only)
         self._s.todos[todo.id] = todo
 
     async def get(self, todo_id: str) -> Todo | None:

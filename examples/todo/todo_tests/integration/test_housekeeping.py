@@ -1,5 +1,6 @@
 """Expired idempotency records are purged; live ones stay replayable."""
 
+import asyncio
 from datetime import timedelta
 
 from todo_app.kernel import IDEMPOTENCY_TTL, IdempotencyRecord
@@ -34,3 +35,24 @@ async def test_purge_removes_only_records_past_the_replay_window(db: Database) -
     async with SqlUsersUnitOfWorkFactory(db)(read_only=True) as uow:
         assert await uow.idempotency.get("users.register", "expired") is None
         assert await uow.idempotency.get("users.register", "live") is not None
+
+
+async def test_periodic_jobs_run_until_the_runtime_closes(db: Database) -> None:
+    relay = OutboxRelay(db, audit_outbox, RecordingAuditBackend(), CountingIntegrity())
+    runtime = ContextRuntime(name="users", db=db, relay=relay, idempotency=idempotency)
+    runs = 0
+
+    async def job() -> None:
+        nonlocal runs
+        runs += 1
+        if runs == 1:
+            raise RuntimeError("one bad run")  # logged; the loop carries on
+
+    runtime.every(0.01, "test-job", job)
+    async with asyncio.timeout(2):
+        while runs < 3:  # noqa: ASYNC110 — polling a counter the job increments
+            await asyncio.sleep(0.01)
+    for task in runtime._tasks:
+        task.cancel()
+
+    assert runs >= 3

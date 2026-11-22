@@ -9,7 +9,12 @@ from todo_app.users.ports import (
     UsersUnitOfWorkFactory,
 )
 
-from .in_memory_unit_of_work import InMemoryState, InMemoryUnitOfWork, InMemoryUnitOfWorkFactory
+from .in_memory_unit_of_work import (
+    InMemoryState,
+    InMemoryUnitOfWork,
+    InMemoryUnitOfWorkFactory,
+    refuse_if_read_only,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -36,18 +41,20 @@ class InMemoryUsersUnitOfWorkFactory(InMemoryUnitOfWorkFactory[UsersState], User
 class InMemoryUsersUnitOfWork(InMemoryUnitOfWork[UsersState], UsersUnitOfWork):
     @property
     def users(self) -> InMemoryUserRepository:
-        return InMemoryUserRepository(self._work)
+        return InMemoryUserRepository(self._work, read_only=self._read_only)
 
     @property
     def api_tokens(self) -> InMemoryApiTokenRepository:
-        return InMemoryApiTokenRepository(self._work)
+        return InMemoryApiTokenRepository(self._work, read_only=self._read_only)
 
 
 class InMemoryUserRepository(UserRepository):
-    def __init__(self, state: UsersState) -> None:
+    def __init__(self, state: UsersState, *, read_only: bool) -> None:
         self._s = state
+        self._read_only = read_only
 
     async def add(self, user: User) -> None:
+        refuse_if_read_only(self._read_only)
         if any(u.email == user.email for u in self._s.users.values()):
             raise EmailTakenError
         self._s.users[user.id] = user
@@ -61,11 +68,14 @@ class InMemoryUserRepository(UserRepository):
 
 
 class InMemoryApiTokenRepository(ApiTokenRepository):
-    def __init__(self, state: UsersState) -> None:
+    def __init__(self, state: UsersState, *, read_only: bool) -> None:
         self._s = state
+        self._read_only = read_only
 
     async def add(self, token_hash: str, user_id: str, created_at: datetime) -> None:
+        refuse_if_read_only(self._read_only)
         self._s.tokens[token_hash] = user_id
 
     async def revoke(self, token_hash: str) -> None:
+        refuse_if_read_only(self._read_only)
         self._s.tokens.pop(token_hash, None)

@@ -7,7 +7,7 @@ test in ``todo_tests/architecture``).
 from .actor import Actor
 from .audit import AuditEntries, AuditOutcome, AuditRecord, AuditTrail
 from .clock import Clock, SystemClock
-from .errors import StorageUnavailableError
+from .errors import ReadOnlyUnitOfWorkError, StorageUnavailableError
 from .idempotency import (
     IDEMPOTENCY_KEY_MAX_LENGTH,
     IDEMPOTENCY_KEY_MIN_LENGTH,
@@ -39,6 +39,7 @@ __all__ = [
     "IdempotencyKeyTakenError",
     "IdempotencyRecord",
     "IdempotencyStore",
+    "ReadOnlyUnitOfWorkError",
     "StorageUnavailableError",
     "SystemClock",
     "Uuid7Ids",

@@ -7,6 +7,7 @@ from todo_app.persistence import open_context_runtime
 
 from .adapters.observed_todo_telemetry import ObservedTodoTelemetry
 from .adapters.sql_migrations import MIGRATIONS
+from .adapters.sql_reporting import publish_todo_metrics
 from .adapters.sql_tables import audit_outbox, idempotency
 from .adapters.sql_todos_unit_of_work import SqlTodosUnitOfWorkFactory
 from .use_cases import CreateTodo
@@ -53,6 +54,12 @@ async def build_todos(
         audit_integrity=audit_integrity,
         poll_outbox=poll_outbox,
     )
+    if poll_outbox:  # long-running process: keep the business metrics fresh
+        runtime.every(
+            settings.METRICS_REFRESH_SECONDS,
+            "business-metrics",
+            lambda: publish_todo_metrics(runtime.db),
+        )
     create = CreateTodo(
         SqlTodosUnitOfWorkFactory(runtime.db),
         ObservedTodoTelemetry(),

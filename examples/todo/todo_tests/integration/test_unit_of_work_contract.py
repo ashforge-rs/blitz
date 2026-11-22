@@ -17,6 +17,7 @@ from todo_app.kernel import (
     AuditRecord,
     IdempotencyKeyTakenError,
     IdempotencyRecord,
+    ReadOnlyUnitOfWorkError,
 )
 from todo_app.persistence import Database
 from todo_app.todos.adapters.sql_tables import audit_outbox as todos_outbox
@@ -199,9 +200,13 @@ async def test_users_adding_a_taken_key_raises_and_leaves_the_unit_usable(
         assert (await uow.idempotency.get("s", "k")) == _idem("k", "first")
 
 
-async def test_users_read_only_units_never_persist(users: Harness[UsersUnitOfWorkFactory]) -> None:
-    async with users.uow(read_only=True) as uow:
-        await uow.users.add(_user())
+async def test_users_read_only_units_refuse_writes(users: Harness[UsersUnitOfWorkFactory]) -> None:
+    async def write_while_reading() -> None:
+        async with users.uow(read_only=True) as uow:
+            await uow.users.add(_user())
+
+    with pytest.raises(ReadOnlyUnitOfWorkError):
+        await write_while_reading()
 
     async with users.uow(read_only=True) as uow:
         assert await uow.users.get("u1") is None

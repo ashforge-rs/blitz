@@ -7,14 +7,17 @@ import sys
 from typing import TYPE_CHECKING, Annotated
 
 import typer
+from config import get_settings
 from loguru import logger
 
+from todo_app.kernel import StorageUnavailableError
 from todo_app.persistence import SchemaOutOfDateError
 from todo_app.settings import TodoSettings
 
 from . import commands
 from .composition import migrate_all, open_services
 from .exit_codes import ExitCode
+from .seed import SeedingRefusedError, seed_demo_data
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -57,6 +60,7 @@ def create_cli(
     settings: TodoSettings | None = None,
     audit_backend: AuditBackend | None = None,
     configure_logs: bool = True,
+    environment: str | None = None,
 ) -> typer.Typer:
     """The CLI application.  Tests inject settings and an audit backend; ``configure_logs``
     is off there so a test run doesn't replace the process's log handlers."""
@@ -79,6 +83,9 @@ def create_cli(
                     return await command(services, console)
             except SchemaOutOfDateError as exc:
                 return console.error("schema_out_of_date", str(exc), ExitCode.CONFIG)
+            except StorageUnavailableError as exc:
+                # e.g. Postgres not started, wrong port or credentials, missing database.
+                return console.error("storage_unavailable", str(exc), ExitCode.TEMPFAIL)
 
         raise typer.Exit(asyncio.run(_with_services()))
 
@@ -117,6 +124,30 @@ def create_cli(
                 services, console, title=title, idempotency_key=idempotency_key, token=token
             )
         )
+
+    @cli.command()
+    def seed() -> None:
+        """Load demo users and todos (local development only; refused in production)."""
+
+        async def _seed(services: Services, console: commands.Console) -> ExitCode:
+            try:
+                report = await seed_demo_data(
+                    services, environment=environment or get_settings().ENVIRONMENT
+                )
+            except SeedingRefusedError as exc:
+                return console.error("seed_refused", str(exc), ExitCode.CONFIG)
+            return console.result(
+                {
+                    "replayed": report.replayed,
+                    "users": [
+                        {"email": u.email, "api_token": u.api_token, "todos": len(u.todos)}
+                        for u in report.users
+                    ],
+                    "already_present": report.existing,
+                }
+            )
+
+        run(_seed)
 
     db = typer.Typer(help="Database maintenance.", no_args_is_help=True)
     cli.add_typer(db, name="db")

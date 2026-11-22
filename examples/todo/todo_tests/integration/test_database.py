@@ -11,7 +11,7 @@ from sqlalchemy import Column, MetaData, String, Table, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from todo_app.kernel import StorageUnavailableError
+from todo_app.kernel import ReadOnlyUnitOfWorkError, StorageUnavailableError
 from todo_app.persistence import Database, UtcDateTime
 from todo_tests.fakes import EPOCH
 
@@ -91,10 +91,13 @@ async def test_concurrent_transactions_do_not_interleave(db: Database) -> None:
     assert await _keys(db) == ["a1", "a2", "b1", "b2", "c1", "c2"]
 
 
-async def test_read_only_transactions_never_persist(db: Database) -> None:
-    async with db.transaction(read_only=True) as conn:
-        await _insert(conn, "a")
+async def test_read_only_transactions_refuse_writes(db: Database) -> None:
+    async def write_while_reading() -> None:
+        async with db.transaction(read_only=True) as conn:
+            await _insert(conn, "a")
 
+    with pytest.raises(ReadOnlyUnitOfWorkError):
+        await write_while_reading()
     assert await _keys(db) == []
 
 

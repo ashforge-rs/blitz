@@ -35,6 +35,8 @@ class TodoSettings(BaseSettings):
     OUTBOX_MAX_AGE_SECONDS: float = Field(default=300, gt=0)
     #: How often expired idempotency records (older than 24 h) are purged.
     IDEMPOTENCY_PURGE_INTERVAL_SECONDS: float = Field(default=3600, gt=0)
+    #: How often the business metrics (users, todos) are recounted from the database.
+    METRICS_REFRESH_SECONDS: float = Field(default=15, gt=0)
     #: How often the audit outbox relay looks for undelivered entries.
     OUTBOX_POLL_INTERVAL_SECONDS: float = Field(default=0.5, gt=0)
 

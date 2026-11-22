@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install verify fmt test coverage dev db-up db-down migrate
+.PHONY: help install verify fmt test coverage dev db-up db-down migrate seed
 
 PY_DIRS := todo_app/ todo_tests/ conftest.py
 PORT    ?= 8000
@@ -29,11 +29,14 @@ coverage: ## Tests with coverage (fails under 90 %)
 dev: ## Run the HTTP app with hot reload (PORT=8000)
 	uv run uvicorn todo_app.main:app --reload --port $(PORT)
 
-db-up: ## Start Postgres (docker compose) and wait until it is healthy
-	docker compose up -d --wait
+db-up: ## Start Postgres (the shared examples/observability stack) and wait until healthy
+	docker compose -f ../observability/docker-compose.yml up -d --wait postgres
 
-db-down: ## Stop Postgres (data is kept in a volume)
-	docker compose down
+db-down: ## Stop the shared stack (data is kept in a volume)
+	docker compose -f ../observability/docker-compose.yml down
 
 migrate: ## Apply pending migrations for every context (TODO_DATABASE_URL)
 	uv run todo db upgrade
+
+seed: ## Load demo users and todos, and print their API tokens (not in production)
+	uv run todo seed

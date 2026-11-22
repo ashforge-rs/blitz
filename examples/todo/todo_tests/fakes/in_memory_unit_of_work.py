@@ -15,11 +15,18 @@ from todo_app.kernel import (
     IdempotencyKeyTakenError,
     IdempotencyRecord,
     IdempotencyStore,
+    ReadOnlyUnitOfWorkError,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import TracebackType
+
+
+def refuse_if_read_only(read_only: bool) -> None:
+    if read_only:
+        msg = "write attempted in a read-only unit of work"
+        raise ReadOnlyUnitOfWorkError(msg)
 
 
 @dataclass
@@ -52,11 +59,11 @@ class InMemoryUnitOfWork[S: InMemoryState]:
 
     @property
     def audit(self) -> InMemoryAuditTrail:
-        return InMemoryAuditTrail(self._work)
+        return InMemoryAuditTrail(self._work, read_only=self._read_only)
 
     @property
     def idempotency(self) -> InMemoryIdempotencyStore[S]:
-        return InMemoryIdempotencyStore(self._work, self._factory)
+        return InMemoryIdempotencyStore(self._work, self._factory, read_only=self._read_only)
 
     async def __aenter__(self) -> Self:
         if self._factory.fail_with is not None:
@@ -76,22 +83,26 @@ class InMemoryUnitOfWork[S: InMemoryState]:
 
 
 class InMemoryAuditTrail(AuditTrail):
-    def __init__(self, state: InMemoryState) -> None:
+    def __init__(self, state: InMemoryState, *, read_only: bool) -> None:
         self._s = state
+        self._read_only = read_only
 
     async def record(self, entry: AuditRecord) -> None:
+        refuse_if_read_only(self._read_only)
         self._s.audit.append(entry)
 
 
 class InMemoryIdempotencyStore[S: InMemoryState](IdempotencyStore):
-    def __init__(self, state: S, factory: InMemoryUnitOfWorkFactory[S]) -> None:
+    def __init__(self, state: S, factory: InMemoryUnitOfWorkFactory[S], *, read_only: bool) -> None:
         self._s = state
         self._factory = factory
+        self._read_only = read_only
 
     async def get(self, scope: str, key: str) -> IdempotencyRecord | None:
         return self._s.idempotency.get((scope, key))
 
     async def add(self, record: IdempotencyRecord) -> None:
+        refuse_if_read_only(self._read_only)
         if (race := self._factory.concurrent_commit) is not None:
             self._factory.concurrent_commit = None
             race(self._factory.state, record)
@@ -101,4 +112,5 @@ class InMemoryIdempotencyStore[S: InMemoryState](IdempotencyStore):
         self._s.idempotency[(record.scope, record.key)] = record
 
     async def replace(self, record: IdempotencyRecord) -> None:
+        refuse_if_read_only(self._read_only)
         self._s.idempotency[(record.scope, record.key)] = record

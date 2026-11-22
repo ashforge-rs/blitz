@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 from prometheus_client import REGISTRY
 
-import todo_app.factory  # noqa: F401 — importing the app registers every metric
+import todo_app.factory
+import todo_app.todos.adapters.sql_reporting
+import todo_app.users.adapters.sql_reporting  # noqa: F401
 from todo_app.cli import composition  # noqa: F401 — and the CLI side, for completeness
 
 GRAFANA = Path(__file__).resolve().parents[2] / "grafana"

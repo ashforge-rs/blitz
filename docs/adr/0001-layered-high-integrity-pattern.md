@@ -31,8 +31,10 @@ inconsistently.
    - the storage technology is expected to change.
 3. **A service uses one pattern throughout.** Mixing flat and layered domains in one service is
    not allowed.
-4. **`examples/todo/` is the reference** for the layered pattern. Its fitness tests
-   (`examples/todo/todo_tests/architecture/`) are copied along with it.
+4. **`examples/todo/` is the full reference** for the layered pattern (two contexts, an audit
+   outbox, an idempotency store, HTTP and CLI). **`examples/consent/` is the lean one**: the
+   same guarantees with only the parts a single context needs. Start from whichever is closer,
+   and copy its fitness tests (`*_tests/architecture/`) along with it.
 
 ## Consequences
 

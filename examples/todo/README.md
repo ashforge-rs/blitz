@@ -31,13 +31,18 @@ make dev            # HTTP API with hot reload on :8000
 make verify         # format, lint, mypy --strict, tests (the root `make verify` runs it too)
 ```
 
+`make seed` loads demo data: three users (`ada@`, `grace@` and `alan@example.com`) with their
+todos. It goes through the use cases, so everything is validated and audited. It prints each
+user's API token, because a demo needs them. Re-running it within 24 hours replays instead of
+duplicating, and issues fresh tokens. It refuses to run with `ENVIRONMENT=production`.
+
 SQLite is the default (`todo.db`). For Postgres:
 
 ```bash
-make db-up          # docker compose: Postgres on :5432, plus a todo_test database
-export TODO_DATABASE_URL=postgresql+asyncpg://todo:todo@localhost:5432/todo
+make db-up          # Postgres on :55432 from ../observability, with a todo_test database
+export TODO_DATABASE_URL=postgresql+asyncpg://examples:examples@localhost:55432/todo
 make dev
-TODO_TEST_POSTGRES_URL=postgresql+asyncpg://todo:todo@localhost:5432/todo_test make verify
+TODO_TEST_POSTGRES_URL=postgresql+asyncpg://examples:examples@localhost:55432/todo_test make verify
 ```
 
 Settings are read from the environment or `.env`. See [`.env.example`](.env.example) for this
