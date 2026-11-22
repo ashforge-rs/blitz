@@ -21,6 +21,9 @@ if TYPE_CHECKING:
     from .database import Database
 
 
+#: How long aclose() waits for an in-progress flush before cancelling it.
+_CLOSE_GRACE_SECONDS = 10.0
+
 #: Undelivered entries per outbox; alert when the oldest grows (see grafana/alerts.yml).
 OUTBOX_PENDING = Gauge(
     "todoapp_audit_outbox_pending", "Audit entries waiting for delivery", ["outbox"]
@@ -162,7 +165,15 @@ class OutboxRelay:
     async def aclose(self) -> None:
         """Stop polling and make a last delivery attempt."""
         if self._task is not None:
-            self._task.cancel()
+            # Cancel the loop between flushes, not inside one: cancelled after backend.log()
+            # but before the delete commits, an entry would stay pending and the final flush
+            # below would deliver it a second time.  A flush stuck longer than the grace
+            # period is cancelled anyway (its entries are kept and sent again later).
+            try:
+                async with asyncio.timeout(_CLOSE_GRACE_SECONDS), self._flush_lock:
+                    self._task.cancel()
+            except TimeoutError:
+                self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
         try:

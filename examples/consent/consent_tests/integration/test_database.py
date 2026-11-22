@@ -1,6 +1,7 @@
 """Outages become StorageUnavailableError fast; SQL bugs propagate."""
 
 import asyncio
+import threading
 
 import pytest
 from sqlalchemy import text
@@ -21,6 +22,23 @@ async def test_an_unreachable_postgres_fails_fast() -> None:
 async def test_an_unopenable_sqlite_file_is_unavailable() -> None:
     with pytest.raises(StorageUnavailableError):
         await Database.connect("sqlite+aiosqlite:////nonexistent-dir/consent.db")
+
+
+def test_a_failed_sqlite_connect_leaves_no_worker_thread_behind() -> None:
+    """aiosqlite stops a failed connection's thread without awaiting it; Database waits for it,
+    or it outlives asyncio.run() and fails with "Event loop is closed" (any later test)."""
+
+    def workers() -> set[threading.Thread]:
+        return {t for t in threading.enumerate() if "_connection_worker_thread" in t.name}
+
+    async def connect() -> None:
+        with pytest.raises(StorageUnavailableError):
+            await Database.connect("sqlite+aiosqlite:////nonexistent-dir/consent.db")
+
+    before = workers()
+    for _ in range(20):
+        asyncio.run(connect())
+        assert not {t for t in workers() - before if t.is_alive()}
 
 
 async def test_sql_bugs_propagate(database_url: str) -> None:

@@ -1,6 +1,8 @@
+import asyncio
 import contextlib
 from typing import TYPE_CHECKING, Any, Self
 
+import aiosqlite
 from sqlalchemy import Delete, Insert, Update, event, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
@@ -40,7 +42,7 @@ class Database:
         ``StorageUnavailableError`` instead of hanging each request.
         """
         if url.startswith("sqlite"):
-            engine = create_async_engine(url)
+            engine = _sqlite_engine(url)
             _configure_sqlite(engine, busy_timeout_ms)
         else:
             engine = create_async_engine(
@@ -112,3 +114,32 @@ def _configure_sqlite(engine: AsyncEngine, busy_timeout_ms: int) -> None:
     def _on_begin(conn: Any) -> None:
         read_only = conn.get_execution_options().get("read_only", False)
         conn.exec_driver_sql("BEGIN" if read_only else "BEGIN IMMEDIATE")
+
+
+def _sqlite_engine(url: str) -> AsyncEngine:
+    """An aiosqlite engine whose failed connects finish before the error propagates.
+
+    When opening fails, aiosqlite (0.22) stops its worker thread without awaiting
+    it; the thread then reports to the event loop. If the loop has closed by then
+    (``asyncio.run()`` returning the error, e.g. a CLI command), the thread raises
+    ``RuntimeError: Event loop is closed``. Opening connections here lets a failed
+    connect wait for that thread while the loop still runs.
+    """
+    connect_args: tuple[list[Any], dict[str, Any]] = ([], {})
+
+    async def open_connection() -> aiosqlite.Connection:
+        cargs, cparams = connect_args
+        connection = aiosqlite.connect(*cargs, **cparams)
+        connection._thread.daemon = True  # as SQLAlchemy's own aiosqlite connect does
+        try:
+            return await connection
+        except BaseException:
+            if connection._thread.is_alive():
+                await asyncio.to_thread(connection._thread.join, 5)
+            raise
+
+    engine = create_async_engine(url, async_creator=open_connection)
+    cargs, cparams = engine.dialect.create_connect_args(engine.url)
+    connect_args[0].extend(cargs)
+    connect_args[1].update(cparams)
+    return engine

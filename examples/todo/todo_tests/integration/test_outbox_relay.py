@@ -140,6 +140,59 @@ async def test_the_background_loop_delivers_without_being_asked(
     assert _ids(backend) == ["a1"]
 
 
+async def test_closing_mid_delivery_sends_nothing_twice(
+    db: Database, relay: OutboxRelay, backend: RecordingAuditBackend
+) -> None:
+    """aclose() while the loop is between backend.log() and the outbox delete must let the
+    delete finish; cancelling it there left the entry pending for the final flush to resend."""
+    closing: list[asyncio.Task[None]] = []
+    deliver = backend.log
+
+    async def deliver_then_close(event: AuditEvent) -> None:
+        await deliver(event)
+        if not closing:  # shut down at the worst moment: delivered, not yet deleted
+            closing.append(asyncio.create_task(relay.aclose()))
+
+    backend.log = deliver_then_close  # type: ignore[method-assign]
+    relay.start()
+    await _commit(db, _entry("a1"))
+
+    async with asyncio.timeout(5):
+        while not closing:  # noqa: ASYNC110 — waiting for the background loop to deliver
+            await asyncio.sleep(0.01)
+        await closing[0]
+
+    assert _ids(backend) == ["a1"]
+    assert await _pending(db) == 0
+
+
+async def test_closing_does_not_wait_forever_for_a_stuck_delivery(
+    db: Database,
+    relay: OutboxRelay,
+    backend: RecordingAuditBackend,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("todo_app.persistence.outbox_relay._CLOSE_GRACE_SECONDS", 0.05)
+    stuck = asyncio.Event()
+    deliver = backend.log
+
+    async def hang_once(event: AuditEvent) -> None:
+        if not stuck.is_set():
+            stuck.set()
+            await asyncio.Event().wait()  # never returns: only cancellation ends it
+        await deliver(event)
+
+    backend.log = hang_once  # type: ignore[method-assign]
+    relay.start()
+    await _commit(db, _entry("a1"))
+    async with asyncio.timeout(5):
+        await stuck.wait()
+        await relay.aclose()  # cancels the stuck flush, then delivers in the final one
+
+    assert _ids(backend) == ["a1"]
+    assert await _pending(db) == 0
+
+
 async def test_close_makes_a_last_delivery_attempt(
     db: Database, backend: RecordingAuditBackend
 ) -> None:

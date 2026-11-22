@@ -2,6 +2,7 @@
 
 import asyncio
 import sqlite3
+import threading
 from collections.abc import AsyncIterator
 from contextlib import closing
 from datetime import datetime
@@ -151,6 +152,23 @@ async def test_an_unreachable_postgres_fails_fast_as_storage_unavailable() -> No
 async def test_an_unopenable_sqlite_file_is_storage_unavailable() -> None:
     with pytest.raises(StorageUnavailableError):
         await Database.connect("sqlite+aiosqlite:////nonexistent-dir/todo.db")
+
+
+def test_a_failed_sqlite_connect_leaves_no_worker_thread_behind() -> None:
+    """aiosqlite stops a failed connection's thread without awaiting it; Database waits for it,
+    or it outlives asyncio.run() and fails with "Event loop is closed" (any later test)."""
+
+    def workers() -> set[threading.Thread]:
+        return {t for t in threading.enumerate() if "_connection_worker_thread" in t.name}
+
+    async def connect() -> None:
+        with pytest.raises(StorageUnavailableError):
+            await Database.connect("sqlite+aiosqlite:////nonexistent-dir/todo.db")
+
+    before = workers()
+    for _ in range(20):
+        asyncio.run(connect())
+        assert not {t for t in workers() - before if t.is_alive()}
 
 
 async def test_timestamps_round_trip_as_aware_utc(db: Database) -> None:
