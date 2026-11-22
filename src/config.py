@@ -30,6 +30,8 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: Literal["development", "production", "test"] = "development"
     LOG_LEVEL: str = "INFO"
+    # "json": one JSON object per line (for log shippers). "text": coloured, for reading locally.
+    LOG_FORMAT: Literal["json", "text"] = "json"
 
     # Request controls
     MAX_REQUEST_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB

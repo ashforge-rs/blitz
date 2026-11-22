@@ -17,8 +17,8 @@ class LoguruAuditBackend(AuditBackend):
     For ``HTTP_REQUEST`` events the HTTP status code also influences the
     level: 5xx → ``ERROR``, 4xx → ``WARNING``, 2xx/3xx → ``INFO``.
 
-    In production (``serialize=True`` Loguru sink) each event becomes a
-    single JSON line.  In development it is human-readable.
+    With the default ``LOG_FORMAT=json`` (``serialize=True`` Loguru sink) each
+    event becomes a single JSON line.  With ``LOG_FORMAT=text`` it is human-readable.
     """
 
     async def log(self, event: AuditEvent) -> None:
@@ -53,4 +53,4 @@ class LoguruAuditBackend(AuditBackend):
             error=event.error,
             metadata=event.metadata,
             **event.extra,
-        ).log(level, "AUDIT")
+        ).log(level, "audit")

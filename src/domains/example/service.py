@@ -84,7 +84,11 @@ class ItemService(Service):
         span.record_exception(exc)
         span.set_status(trace.StatusCode.ERROR, str(exc))
         logger.error(
-            f"{operation}.error", item_id=item_id, error=str(exc), request_id=ctx.request_id
+            "item.storage_failed",
+            operation=operation,
+            item_id=item_id,
+            error=str(exc),
+            request_id=ctx.request_id,
         )
         if audit:
             await self._emit(

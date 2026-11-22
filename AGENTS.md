@@ -146,14 +146,18 @@ Per-request context: `RequestContextDep` or `request.state.ctx` (`request_id`, `
 ## Configuration
 
 All settings are in `src/config.py` and documented in `.env.example`. List settings accept
-`a,b` or `["a","b"]`. In `production`, logs are JSON, `/docs` is off and unhandled exceptions return
-a sanitised 500. Middleware order (outer → inner): TrustedHost → CORS → InFlight → Audit →
-SecurityHeaders → Timeout → SizeLimit → RateLimit → Context → handler.
+`a,b` or `["a","b"]`. Logs are JSON lines unless `LOG_FORMAT=text`. In `production`, `/docs` is
+off and unhandled exceptions return a sanitised 500. Middleware order (outer → inner):
+TrustedHost → CORS → InFlight → Audit → SecurityHeaders → Timeout → SizeLimit → RateLimit →
+Context → handler.
 Built-in routes `/live`, `/health`, `/metrics`, `/docs` are never prefixed.
 
 ## Conventions
 
 - Line length 100; Ruff only. Never a bare `except:`; a broad `except Exception` needs a `noqa` reason.
 - Relative imports inside a domain package (`from .models import ...`).
+- Log messages are fixed lowercase phrases; every value (IDs, names, paths, error text) is its
+  own field: `logger.info("domain bootstrapped", domain=name)`, never an f-string. A test
+  enforces it.
 - Don't add docstrings, comments or annotations to code you didn't change; don't add unrequested features.
 - Commits and PR titles follow Conventional Commits with the scopes in `.github/conventional-commits.yml`.

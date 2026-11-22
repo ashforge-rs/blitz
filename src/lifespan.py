@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     Application lifespan — startup and graceful shutdown.
 
     **Startup**
-    - Configures Loguru (JSON in production, coloured in development).
+    - Configures Loguru: JSON lines by default, coloured text with ``LOG_FORMAT=text``.
     - Bootstraps every domain module (see :mod:`bootstrap`).
 
     **Shutdown**
@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     configure_logging(
         level=settings.LOG_LEVEL,
-        json=settings.ENVIRONMENT == "production",
+        json=settings.LOG_FORMAT == "json",
     )
     setup_telemetry(settings)
     logger.info("blitz starting up", environment=settings.ENVIRONMENT)
@@ -109,7 +109,7 @@ async def _drain(app: FastAPI, deadline: float) -> None:
     remaining = getattr(app.state, "in_flight", 0)
     if remaining > 0:
         logger.warning(
-            "Shutdown timeout reached — forcing close",
+            "shutdown timeout reached — forcing close",
             in_flight=remaining,
             timeout=deadline,
         )

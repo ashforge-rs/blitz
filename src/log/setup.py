@@ -1,8 +1,16 @@
+import json as _json
 import logging
 import sys
+from datetime import UTC
+from typing import TYPE_CHECKING, Any, TextIO
 
 import loguru
 from loguru import logger as _logger
+
+if TYPE_CHECKING:
+    from loguru import Message, Record
+
+_CORE_FIELDS = ("time", "level", "logger", "message", "exception")
 
 
 class _InterceptHandler(logging.Handler):
@@ -22,15 +30,59 @@ class _InterceptHandler(logging.Handler):
         _logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
-def configure_logging(level: str = "INFO", json: bool = False) -> None:
+def _to_json_line(record: Record, exception: str) -> str:
+    """One flat JSON object: core fields first, then the bound ``extra`` fields.
+
+    Fields whose value is ``None`` or an empty dict/list are left out. A bound field named like
+    a core one never overwrites it: it is kept as ``extra_<name>``.
+    """
+    extra = {
+        k if k not in _CORE_FIELDS or k == "logger" else f"extra_{k}": v
+        for k, v in record["extra"].items()
+    }
+    payload: dict[str, Any] = {
+        "time": record["time"]
+        .astimezone(UTC)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z"),
+        "level": record["level"].name,
+        "logger": extra.pop("logger", None) or record["name"],
+        "message": record["message"],
+        "exception": exception or None,
+        **extra,
+    }
+    payload = {k: v for k, v in payload.items() if v is not None and v != {} and v != []}
+    return _json.dumps(payload, default=str, ensure_ascii=False)
+
+
+class _JsonLinesSink:
+    """Writes each record as one JSON line.
+
+    The sink's format is ``""``, so Loguru hands over only the rendered traceback (it appends
+    ``{exception}`` itself). The traceback is rendered in the logging thread, because with
+    ``enqueue=True`` the record reaches the sink pickled, without its traceback object.
+    """
+
+    def __init__(self, stream: TextIO) -> None:
+        self._stream = stream
+
+    def __call__(self, message: Message) -> None:
+        self._stream.write(_to_json_line(message.record, str(message).strip()) + "\n")
+        self._stream.flush()
+
+
+def configure_logging(level: str = "INFO", json: bool = True) -> None:
     _logger.remove()
 
     if json:
+        # diagnose=False: tracebacks must not print local variables (secrets) into logs.
         _logger.add(
-            sys.stdout,
+            _JsonLinesSink(sys.stdout),
             level=level,
-            serialize=True,
+            format="",
             enqueue=True,
+            backtrace=False,
+            diagnose=False,
         )
     else:
         _logger.add(

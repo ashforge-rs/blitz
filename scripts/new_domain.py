@@ -185,7 +185,9 @@ class ${Entity}Service(Service):
     async def _storage_failure(
         self, exc: Exception, ctx: RequestContext, operation: str, ${entity}_id: str | None = None
     ) -> Failure[${Entity}Error]:
-        logger.error(f"{operation}.error", ${entity}_id=${entity}_id, error=str(exc))
+        logger.error(
+            "${entity}.storage_failed", operation=operation, ${entity}_id=${entity}_id, error=str(exc)
+        )
         if operation.split(".")[-1] in {"create", "update", "delete"}:
             await self._audit_op(ctx, operation, ${entity}_id, AuditResult.FAILURE)
         return Failure(${Entity}Error(${Entity}ErrorCode.STORAGE_ERROR, str(exc), ${entity}_id))

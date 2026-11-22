@@ -46,9 +46,9 @@ def register_error_handlers(app: FastAPI, *, is_production: bool = True) -> None
         error = exc.error
         if error.status >= 500:
             logger.error(
-                "Domain failure",
+                "domain failure",
                 code=str(error.code),
-                message=error.message,
+                error=error.message,
                 method=request.method,
                 path=request.url.path,
             )
@@ -69,7 +69,7 @@ def register_error_handlers(app: FastAPI, *, is_production: bool = True) -> None
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
         logger.opt(exception=True).error(
-            "Unhandled exception",
+            "unhandled exception",
             method=request.method,
             path=request.url.path,
         )
