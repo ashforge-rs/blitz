@@ -142,7 +142,8 @@ def update(
         raise fail(str(exc)) from exc
     if record is None:
         raise fail(
-            "no [tool.blitz.template] in pyproject.toml (made by `blitz new`); nothing to update from"
+            "no [tool.blitz.template] in pyproject.toml (made by `blitz new`); "
+            "nothing to update from"
         )
     if not dry_run and not allow_dirty and not _clean_worktree(proj.root):
         raise fail("uncommitted changes: commit or stash them first (or pass --allow-dirty)")

@@ -11,8 +11,10 @@ import re
 import subprocess
 import tarfile
 from dataclasses import asdict, dataclass, fields
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 #: Not copied into a new project: the template's own history and its example apps.
 EXCLUDED = ("CHANGELOG.md",)
@@ -146,7 +148,7 @@ def _set(pattern: str, value: str, text: str, *, count: int = 0) -> str:
     )
 
 
-def transform(path: str, text: str, a: Answers, t: Identity) -> str:  # noqa: C901, PLR0912 — one rule per file
+def transform(path: str, text: str, a: Answers, t: Identity) -> str:
     """Rename the template to the project, file by file. Unmatched patterns are no-ops."""
     old = re.escape(t.name)
     python = a.python or t.python
@@ -161,7 +163,8 @@ def transform(path: str, text: str, a: Answers, t: Identity) -> str:  # noqa: C9
     elif path == "uv.lock":
         text = _set(rf'^(\[\[package\]\]\nname = ")({old})("\nversion = ")', a.name, text, count=1)
         text = _set(
-            rf'^(\[\[package\]\]\nname = "{re.escape(a.name)}"\nversion = ")([^"]*)("\nsource = {{ editable = "\." }})',
+            rf'^(\[\[package\]\]\nname = "{re.escape(a.name)}"\nversion = ")'
+            r'([^"]*)("\nsource = \{ editable = "\." \})',
             "0.1.0",
             text,
             count=1,
@@ -196,8 +199,27 @@ def transform(path: str, text: str, a: Answers, t: Identity) -> str:  # noqa: C9
         text = _set(r'^(\s*description\s*=\s*")([^"]*)(")', a.description, text, count=1)
     elif path == ".github/CODEOWNERS" and a.owner and t.owner:
         text = text.replace(f"@{t.owner}", f"@{a.owner}")
-    elif path.startswith(".github/workflows/") and a.python:
-        text = _set(r'^(\s*PYTHON_PRIMARY:\s*"?)([0-9.]+)("?)', python, text)
+    elif path.startswith(".github/workflows/"):
+        if a.python:
+            text = _set(r'^(\s*PYTHON_PRIMARY:\s*"?)([0-9.]+)("?)', python, text)
+        if not a.examples:  # the example-* jobs build examples/, which is not copied
+            text = re.sub(
+                r"^  # ─+\n  # example-[\w-]+ —.*?(?=^  # ─+\n  # (?!example-))",
+                "",
+                text,
+                flags=re.MULTILINE | re.DOTALL,
+            )
+    elif path == "Makefile" and not a.examples:
+        text = re.sub(r"^\t\$\(MAKE\) -C examples/\S+ verify\n", "", text, flags=re.MULTILINE)
+        text = text.replace("(+ examples/, cli/)", "(+ cli/)")
+    elif path == "AGENTS.md" and not a.examples:
+        text = re.sub(
+            r"the reference implementations are\n`examples/todo/` \(full\) and `examples/consent/` \(lean\)\.",
+            lambda _: (
+                "the reference implementations\n(todo: full, consent: lean) are in the boilerplate's examples directory."
+            ),
+            text,
+        )
     return text
 
 

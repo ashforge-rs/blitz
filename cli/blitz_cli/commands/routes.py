@@ -21,26 +21,39 @@ def calls(dependant):
         yield sub.call
         yield from calls(sub)
 
-def walk(routes, prefix=""):
+def walk(routes, prefix="", guarded=False, visible=True):
+    # FastAPI includes routers lazily: an included router is a route holding
+    # `original_router`, with its prefix and router-level dependencies on `include_context`.
     for route in routes:
-        if isinstance(route, Mount):
-            yield from walk(route.routes, prefix + route.path)
+        nested = getattr(route, "original_router", None)
+        if nested is not None:
+            ctx = getattr(route, "include_context", None)
+            deps = getattr(ctx, "dependencies", None) or []
+            yield from walk(
+                nested.routes,
+                prefix + (getattr(ctx, "prefix", "") or ""),
+                guarded or any(getattr(d, "dependency", None) is get_auth_context for d in deps),
+                visible and getattr(ctx, "include_in_schema", True),
+            )
+        elif isinstance(route, Mount):
+            yield from walk(route.routes, prefix + route.path, guarded, visible)
         else:
-            yield prefix, route
+            yield prefix, route, guarded, visible
 
 out = []
 for service in sys.argv[1:]:
-    for prefix, route in walk(app_for(service).routes):
+    for prefix, route, guarded, visible in walk(app_for(service).routes):
         endpoint = getattr(route, "endpoint", None)
         dependant = getattr(route, "dependant", None)
+        needs_auth = dependant is not None and any(c is get_auth_context for c in calls(dependant))
         out.append({
             "service": service,
             "methods": sorted(set(getattr(route, "methods", None) or []) - {"HEAD"}),
             "path": prefix + route.path,
             "name": route.name,
             "module": getattr(endpoint, "__module__", "") or "",
-            "auth": dependant is not None and any(c is get_auth_context for c in calls(dependant)),
-            "in_schema": getattr(route, "include_in_schema", True),
+            "auth": guarded or needs_auth,
+            "in_schema": visible and getattr(route, "include_in_schema", True),
         })
 print(json.dumps(out))
 """

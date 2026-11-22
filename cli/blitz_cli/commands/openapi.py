@@ -2,10 +2,10 @@
 
 import io
 import json
-from dataclasses import asdict
 import subprocess
 import tarfile
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -116,7 +116,8 @@ def openapi(
             )
             typer.echo(f"{tag}  {change.operation or '-'}  {change.message}")
         typer.echo(
-            f"\n{service} vs {label}: {len(breaking)} breaking, {len(changes) - len(breaking)} other changes"
+            f"\n{service} vs {label}: {len(breaking)} breaking, "
+            f"{len(changes) - len(breaking)} other changes"
         )
     if check and breaking:
         raise typer.Exit(code=1)

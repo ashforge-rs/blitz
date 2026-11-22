@@ -1,4 +1,4 @@
-"""``blitz new``: start a project from the boilerplate, renamed and recorded for ``blitz update``."""
+"""``blitz new``: a project from the boilerplate, renamed and recorded for ``blitz update``."""
 
 import subprocess
 import tempfile
@@ -25,7 +25,7 @@ HOME_TEMPLATE = Path(__file__).resolve().parents[3]
 
 
 def default_source() -> str:
-    """The boilerplate's `origin` URL when it has one (so `update` works anywhere), else its path."""
+    """The boilerplate's `origin` URL if set (so `update` works anywhere), else its path."""
     if not (HOME_TEMPLATE / ".git").exists():
         raise fail("this CLI is not inside a git checkout of the boilerplate; pass --from")
     result = subprocess.run(  # noqa: S603
@@ -125,7 +125,8 @@ def new(
         )
         if not committed:
             typer.secho(
-                "warning: git init/commit did not complete (is user.name/email set?); commit yourself",
+                "warning: git init/commit did not complete (is user.name/email set?); "
+                "commit yourself",
                 fg=typer.colors.YELLOW,
                 err=True,
             )

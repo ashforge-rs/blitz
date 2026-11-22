@@ -1,5 +1,6 @@
 """What every command shares: the project, its config, prompts, output and file generation."""
 
+import contextlib
 import os
 import sys
 from dataclasses import dataclass, field
@@ -228,10 +229,8 @@ def _template_names() -> list[str]:
     proj = _completion_project()
     dirs = [TEMPLATES_DIR]
     if proj is not None:
-        try:
+        with contextlib.suppress(ConfigError):
             dirs = load_config(proj.root).template_dirs
-        except ConfigError:
-            pass
     try:
         return [t.name for t in available(dirs)]
     except TemplateError:
