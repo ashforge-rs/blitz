@@ -1,0 +1,19 @@
+from audit.backend import AuditBackend, AuditEvent
+from audit.backends.loguru import LoguruAuditBackend
+
+
+class ${Pascal}AuditBackend(AuditBackend):
+    """Writes audit events to $words.
+
+    Until log() writes to the real target it forwards every event to ``fallback``
+    (Loguru by default), so wiring it in never loses events.
+    """
+
+    def __init__(self, fallback: AuditBackend | None = None) -> None:
+        self._fallback = fallback or LoguruAuditBackend()
+
+    async def log(self, event: AuditEvent) -> None:
+        await self._fallback.log(event)
+
+    async def aclose(self) -> None:
+        """Release connections or flush buffers opened for the target."""

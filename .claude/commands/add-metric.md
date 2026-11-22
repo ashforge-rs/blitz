@@ -2,6 +2,19 @@ Add one or more Prometheus custom metrics for the instrumentation described belo
 
 Arguments: $ARGUMENTS
 
+## Start with the generator
+
+Do not create the files by hand:
+
+```bash
+uv run --project cli blitz g m <name_total> [--type histogram] [--labels a,b] [--module <module>] --dry-run   # see what changes
+uv run --project cli blitz g m <name_total> [--type histogram] [--labels a,b] [--module <module>]
+```
+
+It appends `<NAME> = counter(...)` / `histogram(...)` to `src/metrics/<module>.py` (default
+`custom`), creating it if needed, and refuses names that break the conventions below (a counter
+must end in `_total`). Then increment / observe it where the event happens.
+
 ## Instructions
 
 Use the helpers in `src/metrics/registry.py`:

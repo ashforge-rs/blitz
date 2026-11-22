@@ -1,0 +1,44 @@
+"""Runs against a real database: set BLITZ_TEST_POSTGRES_URL (e.g. the compose `postgres`)."""
+
+import os
+import uuid
+
+import asyncpg
+import pytest
+from pydantic import BaseModel
+
+from store.postgres import PostgresStore
+
+URL = os.environ.get("BLITZ_TEST_POSTGRES_URL", "")
+needs_db = pytest.mark.skipif(not URL, reason="BLITZ_TEST_POSTGRES_URL not set")
+
+
+class Item(BaseModel):
+    id: str
+    name: str
+
+
+def test_rejects_unsafe_table_name() -> None:
+    with pytest.raises(ValueError, match="table"):
+        PostgresStore(None, Item, namespace="x", table="kv; drop")  # type: ignore[arg-type]
+
+
+@needs_db
+async def test_roundtrip_and_namespaces() -> None:
+    pool = await asyncpg.create_pool(URL)
+    try:
+        table = f"kv_test_{uuid.uuid4().hex[:8]}"
+        store = PostgresStore(pool, Item, namespace="a", table=table)
+        await store.ensure_table()
+        item = Item(id="1", name="a")
+        await store.set("1", item)
+        await store.set("1", item)  # upsert
+        assert await store.get("1") == item
+        assert await store.exists("1")
+        assert await store.keys() == ["1"]
+        assert await PostgresStore(pool, Item, namespace="b", table=table).keys() == []
+        assert await store.delete("1")
+        assert not await store.delete("1")
+        await pool.execute(f"DROP TABLE {table}")
+    finally:
+        await pool.close()

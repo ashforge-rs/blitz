@@ -1,0 +1,13 @@
+from fastapi import APIRouter
+from pydantic import BaseModel
+
+router = APIRouter(tags=["internal"])
+
+
+class ${Pascal}Response(BaseModel):
+    status: str = "ok"
+
+
+@router.get("/$route", summary="$words")
+async def get_${slug}() -> ${Pascal}Response:
+    return ${Pascal}Response()

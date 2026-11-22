@@ -2,9 +2,24 @@ Implement a concrete `AuthProvider` for the authentication scheme described belo
 
 Arguments: $ARGUMENTS
 
+## Start with the generator
+
+Do not create the files by hand:
+
+```bash
+uv run --project cli blitz g auth <slug> --dry-run   # see what changes
+uv run --project cli blitz g auth <slug>
+```
+
+It creates `src/auth/providers/<slug>.py` (a deny-by-default `<Slug>AuthProvider`) and
+`tests/global/unit/test_auth_<slug>.py`, and passes `auth_provider=<Slug>AuthProvider()` to
+`create_app()` in `src/services/api/main.py` (`--service <name>` for another service). If the
+service already has an auth provider it says so and leaves `main.py` alone. Then implement
+`authenticate()` / `authorize()` as described below.
+
 ## Instructions
 
-Create `src/auth/providers/<slug>.py` containing a class that satisfies the `AuthProvider` protocol:
+The generated class in `src/auth/providers/<slug>.py` satisfies the `AuthProvider` protocol; fill in:
 
 ```python
 from auth.protocol import AuthProvider  # for reference — do NOT inherit, it's a Protocol
@@ -20,7 +35,7 @@ class MyAuthProvider:
 ### Rules
 - `authenticate` must return `None` (never raise) when credentials are absent or invalid — the dependency converts that to a 401
 - `authorize` receives the already-verified principal; use it to check scopes/roles
-- Store the provider on the app via `create_app(auth_provider=MyAuthProvider())`
+- The generator already passes it to `create_app(auth_provider=...)`; check the service's `main.py`
 - If the scheme requires config (secret keys, JWKS URL, etc.) read values from `Settings` — add new fields to `src/config.py` if needed, and document them in `.env.example`
 - No `from __future__ import annotations` — Python 3.14+ evaluates annotations lazily (PEP 649)
 

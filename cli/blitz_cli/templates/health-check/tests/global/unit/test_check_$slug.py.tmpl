@@ -1,0 +1,7 @@
+from checks.$slug import check_${slug}
+
+
+async def test_reports_name_and_health() -> None:
+    result = await check_${slug}()
+    assert result["name"] == "$slug"
+    assert isinstance(result["healthy"], bool)

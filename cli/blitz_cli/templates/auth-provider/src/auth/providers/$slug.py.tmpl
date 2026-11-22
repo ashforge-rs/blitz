@@ -1,0 +1,28 @@
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+
+    from context import RequestContext
+
+
+class ${Pascal}AuthProvider:
+    """$words authentication. Denies every request until authenticate() verifies something.
+
+    Protect a route with ``Depends(get_auth_context)`` (``auth.dependency``); the principal
+    returned here is stored on the request context as ``"principal"``.
+    """
+
+    async def authenticate(self, request: Request) -> dict[str, Any] | None:
+        """Return the principal for valid credentials, ``None`` otherwise (→ 401)."""
+        token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+        if not token:
+            return None
+        # Verify the token here and return the identity it carries; until then nothing passes.
+        return None
+
+    async def authorize(
+        self, request: Request, principal: dict[str, Any], context: RequestContext
+    ) -> bool:
+        """Return ``False`` to reject an authenticated principal (→ 403)."""
+        return True

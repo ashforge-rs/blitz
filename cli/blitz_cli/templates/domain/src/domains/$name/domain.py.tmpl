@@ -14,6 +14,8 @@ from .repository import ${Entity}Repository
 from .service import ${Entity}Service
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from bootstrap import BootstrapContext
 
 
@@ -22,9 +24,13 @@ class ${Plural}Domain:
 
     def __init__(self, service: ${Entity}Service) -> None:
         self.service = service
+        #: Async callables run (last first) on shutdown: register what bootstrap() opens.
+        self.closers: list[Callable[[], Awaitable[object]]] = []
 
     async def aclose(self) -> None:
-        """Called on shutdown — close anything bootstrap() opened."""
+        """Called on shutdown — closes what bootstrap() opened."""
+        for close in reversed(self.closers):
+            await close()
 
 
 _router = ResultRouter(prefix="/$route", tags=["$name"])

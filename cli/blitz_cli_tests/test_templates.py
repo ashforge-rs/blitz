@@ -29,7 +29,7 @@ def test_values_cover_every_placeholder(set_name, values):
 def test_dollar_escape_survives(tmp_path: Path) -> None:
     (tmp_path / "demo").mkdir()
     (tmp_path / "demo" / "$x.txt.tmpl").write_text("ENV PATH=$$PATH $x\n")
-    [file] = templates.load("demo", tmp_path).render({"x": "hi"})
+    [file] = templates.load("demo", [tmp_path]).render({"x": "hi"})
     assert file == templates.RenderedFile(Path("hi.txt"), "ENV PATH=$PATH hi\n")
 
 

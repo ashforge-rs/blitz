@@ -1,0 +1,10 @@
+from typing import Any
+
+
+async def check_${slug}() -> dict[str, Any]:
+    """Readiness of $words, reported by ``GET /health`` (any failure → 503)."""
+    try:
+        healthy = True  # Replace with a real probe of the dependency.
+    except Exception as exc:  # noqa: BLE001 — any failure marks the check unhealthy
+        return {"name": "$slug", "healthy": False, "error": str(exc)}
+    return {"name": "$slug", "healthy": healthy}

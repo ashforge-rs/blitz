@@ -48,7 +48,9 @@ warn_return_any = true
 
 [[tool.mypy.overrides]]
 module = ["blitz_cli_tests.*"]
+# Test helpers take fixtures and paths untyped, as in the root project's tests.
 disallow_untyped_defs = false
+disallow_untyped_calls = false
 
 # ── pytest ───────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]

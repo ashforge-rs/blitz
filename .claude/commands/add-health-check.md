@@ -2,6 +2,20 @@ Add a new readiness health check for the dependency described below.
 
 Arguments: $ARGUMENTS
 
+## Start with the generator
+
+Do not create the files by hand:
+
+```bash
+uv run --project cli blitz g hc <name> --dry-run   # see what changes
+uv run --project cli blitz g hc <name>
+```
+
+It creates `src/checks/<name>.py` (`check_<name>()` returning `{"name", "healthy"}`) and
+`tests/global/unit/test_check_<name>.py`, and appends `check_<name>` to `health_checks=[...]`
+in the service's `main.py`. Then replace the placeholder probe as described below. For Redis or
+PostgreSQL use `uv run --project cli blitz add redis|postgres`, which brings its own check.
+
 ## Instructions
 
 A health check is an `async` callable with no required arguments that returns a `dict` with at least:

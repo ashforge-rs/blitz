@@ -13,7 +13,9 @@ for coding agents (Claude Code reads it through `CLAUDE.md`, Copilot through
 | `make domain DOMAIN=orders [ENTITY=Order]` | Scaffold a domain + tests and register it |
 | `make cli ARGS="crud Product -f title:str -f price:float"` | A domain for an entity with real fields (`make crud` is the interactive wizard; agents pass `-f`) |
 | `make service NAME=worker` | Scaffold a service: `main.py`, empty `domains.py`, `Dockerfile` |
-| `make cli ARGS="domain list"` | Run the `blitz` generator CLI (`domain new/list/remove`, `service new/list`, `template list/show`) |
+| `make cli ARGS="g <generator> ..."` | Generate code (`blitz g --help`): `endpoint`/`error-code` for an existing domain; `auth-provider`, `audit-backend`, `health-check`, `middleware`, `route`, `metric` (created *and* wired); `domain --no-crud` |
+| `make cli ARGS="add redis --domain orders"` | Wire an integration (`redis`, `postgres`): store, settings, `.env.example`, health check, compose, dependency |
+| `make doctor` | Fast check of the project's rules (contract, registration, tests, `.env.example`); `make verify` stays the gate |
 | `make fmt` / `make lint` | Auto-format / lint with Ruff |
 | `make test` · `test-unit` · `test-integration` · `test-fuzz` | All tests / one tier |
 | `make coverage` | Tests with coverage (fails under 80 %) |
@@ -53,7 +55,8 @@ tests/                # global/{unit,integration}, domains/<name>/{unit,integrat
 ## Domains
 
 Business features are domains. Create one with `make domain DOMAIN=<snake_case>`, then
-customise; don't hand-write the files. Generated code comes from `cli/blitz_cli/templates/`:
+customise; don't hand-write the files. Add endpoints and error codes to an existing domain with
+`blitz g endpoint` / `blitz g error-code` (see `cli/README.md`), never by copying a route. Generated code comes from `cli/blitz_cli/templates/`:
 change the template there, not the generator, to change what every new domain starts with. Each layer depends only on the one below:
 
 ```

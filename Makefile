@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev domain crud service cli verify lint fmt check test test-unit test-integration test-fuzz coverage openapi docker-build docker-push docker-run clean
+.PHONY: help install dev domain crud service cli doctor verify lint fmt check test test-unit test-integration test-fuzz coverage openapi docker-build docker-push docker-run clean
 
 # ── Multi-service layout ──────────────────────────────────────────────────────
 # Each service lives under src/services/<name>/ (main.py + Dockerfile) and
@@ -37,6 +37,9 @@ crud: ## Wizard: an entity + its CRUD API as a new domain (ask name, fields, typ
 service: ## Scaffold a service: main.py, domains.py, Dockerfile (NAME=worker)
 	@test "$(origin NAME)" = "command line" || (echo "usage: make service NAME=<snake_case>" && exit 1)
 	$(BLITZ) service new $(NAME)
+
+doctor: ## Check the project's rules: domain contract, registration, tests, .env.example
+	$(BLITZ) doctor --import
 
 cli: ## Run the blitz code-generator CLI (ARGS="domain list"; ARGS=--help for every command)
 	$(BLITZ) $(ARGS)

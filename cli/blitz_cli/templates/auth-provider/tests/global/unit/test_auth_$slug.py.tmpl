@@ -1,0 +1,23 @@
+from unittest.mock import MagicMock
+
+from auth.protocol import AuthProvider
+from auth.providers.$slug import ${Pascal}AuthProvider
+
+
+def _request(headers: dict[str, str]) -> MagicMock:
+    request = MagicMock()
+    request.headers = headers
+    return request
+
+
+def test_satisfies_protocol() -> None:
+    assert isinstance(${Pascal}AuthProvider(), AuthProvider)
+
+
+async def test_missing_credentials_are_unauthenticated() -> None:
+    assert await ${Pascal}AuthProvider().authenticate(_request({})) is None
+
+
+async def test_authorize_allows_an_authenticated_principal() -> None:
+    provider = ${Pascal}AuthProvider()
+    assert await provider.authorize(_request({}), {"sub": "u1"}, MagicMock()) is True

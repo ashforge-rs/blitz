@@ -1,0 +1,1 @@
+description = "Pure-ASGI middleware in src/middleware/, with a test; registered innermost in stack.py (request context available)"

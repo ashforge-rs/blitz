@@ -33,7 +33,10 @@ tests/domains/<name>/{unit,integration,fuzz}/   # passing test skeletons
 
 and appends the module to `src/services/<service>/domains.py`. If the script refuses (name
 taken, invalid name, unknown service), report that to the user instead of working around it.
-`--dry-run` lists the files without writing them.
+`--dry-run` lists the files without writing them. `--no-crud` makes a domain without CRUD
+routes (an empty router); then add each endpoint with
+`uv run --project cli blitz g endpoint <name> <action> [--method post] [--collection]` and each
+error code with `uv run --project cli blitz g error-code <name> <code> --status 409`.
 
 ## 2. Customise
 
