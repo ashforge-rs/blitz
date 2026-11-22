@@ -1,0 +1,34 @@
+import pytest
+from fastapi import FastAPI
+from httpx import AsyncClient
+
+from services.$service.domains import DOMAINS
+
+BASE = "/v1/$route"
+
+
+@pytest.fixture
+def app(make_app) -> FastAPI:
+    """The app with every domain the ``$service`` service serves (``client`` uses it)."""
+    return make_app(domains=DOMAINS)
+
+
+async def test_crud_roundtrip(client: AsyncClient) -> None:
+    created = await client.post(f"{BASE}/", json={"name": "a"})
+    assert created.status_code == 201
+    ${entity}_id = created.json()["id"]
+
+    assert (await client.get(f"{BASE}/{${entity}_id}")).json()["name"] == "a"
+    assert (await client.patch(f"{BASE}/{${entity}_id}", json={"name": "b"})).json()["name"] == "b"
+    assert (await client.delete(f"{BASE}/{${entity}_id}")).status_code == 204
+
+
+async def test_missing_is_problem_404(client: AsyncClient) -> None:
+    r = await client.get(f"{BASE}/missing")
+    assert r.status_code == 404
+    assert r.headers["content-type"] == "application/problem+json"
+    assert r.json()["code"] == "not_found"
+
+
+async def test_invalid_body_is_422(client: AsyncClient) -> None:
+    assert (await client.post(f"{BASE}/", json={"name": ""})).status_code == 422

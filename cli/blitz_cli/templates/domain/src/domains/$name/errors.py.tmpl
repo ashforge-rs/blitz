@@ -1,0 +1,21 @@
+from collections.abc import Mapping  # noqa: TC003 — evaluated at runtime by dataclass ClassVar
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import ClassVar
+
+from errors.domain import DomainError
+
+
+class ${Entity}ErrorCode(StrEnum):
+    NOT_FOUND = "not_found"
+    STORAGE_ERROR = "storage_error"
+
+
+@dataclass(frozen=True, slots=True)
+class ${Entity}Error(DomainError[${Entity}ErrorCode]):
+    ${entity}_id: str | None = None
+
+    STATUS: ClassVar[Mapping[str, int]] = {
+        ${Entity}ErrorCode.NOT_FOUND: 404,
+        ${Entity}ErrorCode.STORAGE_ERROR: 500,
+    }

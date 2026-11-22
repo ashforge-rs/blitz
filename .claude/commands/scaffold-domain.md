@@ -8,10 +8,11 @@ second argument is the PascalCase entity name; by default it is the singular of 
 
 ## 1. Generate
 
-Run the scaffold script — do not hand-write the files:
+Run the generator — do not hand-write the files:
 
 ```bash
-uv run python scripts/new_domain.py <name> [--entity <Entity>] [--service api]
+make domain DOMAIN=<name> [ENTITY=<Entity>] [SERVICE=api]
+# same as: uv run --project cli blitz domain new <name> [--entity <Entity>] [--service api]
 ```
 
 It creates:
@@ -29,7 +30,8 @@ tests/domains/<name>/{unit,integration,fuzz}/   # passing test skeletons
 ```
 
 and appends the module to `src/services/<service>/domains.py`. If the script refuses (name
-taken, invalid name), report that to the user instead of working around it.
+taken, invalid name, unknown service), report that to the user instead of working around it.
+`--dry-run` lists the files without writing them.
 
 ## 2. Customise
 

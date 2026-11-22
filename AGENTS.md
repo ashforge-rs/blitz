@@ -11,6 +11,8 @@ for coding agents (Claude Code reads it through `CLAUDE.md`, Copilot through
 | --- | --- |
 | `make verify` | **Run before saying work is done.** Format check, lint, mypy, tests; changes nothing |
 | `make domain DOMAIN=orders [ENTITY=Order]` | Scaffold a domain + tests and register it |
+| `make service NAME=worker` | Scaffold a service: `main.py`, empty `domains.py`, `Dockerfile` |
+| `make cli ARGS="domain list"` | Run the `blitz` generator CLI (`domain new/list/remove`, `service new/list`, `template list/show`) |
 | `make fmt` / `make lint` | Auto-format / lint with Ruff |
 | `make test` · `test-unit` · `test-integration` · `test-fuzz` | All tests / one tier |
 | `make coverage` | Tests with coverage (fails under 80 %) |
@@ -42,14 +44,16 @@ src/
 ├── log/ metrics/ telemetry/
 ├── domains/<name>/   # business logic, one package per bounded context
 └── services/<name>/  # ASGI apps: main.py, domains.py (DOMAINS list), Dockerfile
-scripts/              # new_domain.py (scaffold), generate_openapi.py
-tests/                # global/{unit,integration}, domains/<name>/{unit,integration,fuzz}, scripts/
+scripts/              # generate_openapi.py
+cli/                  # `blitz` code generator (own uv project); templates in blitz_cli/templates/
+tests/                # global/{unit,integration}, domains/<name>/{unit,integration,fuzz}, docs/
 ```
 
 ## Domains
 
 Business features are domains. Create one with `make domain DOMAIN=<snake_case>`, then
-customise; don't hand-write the files. Each layer depends only on the one below:
+customise; don't hand-write the files. Generated code comes from `cli/blitz_cli/templates/`:
+change the template there, not the generator, to change what every new domain starts with. Each layer depends only on the one below:
 
 ```
 KeyValueStore (protocol) → Repository → Service → Domain (routes + bootstrap)

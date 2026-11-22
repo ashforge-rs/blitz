@@ -1,0 +1,12 @@
+"""
+Domain modules served by the ``$service`` service.
+
+``make domain DOMAIN=<name> SERVICE=$service`` appends new domains here.
+"""
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import types
+
+DOMAINS: list[types.ModuleType] = []

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev domain verify lint fmt check test test-unit test-integration test-fuzz coverage openapi docker-build docker-push docker-run clean
+.PHONY: help install dev domain service cli verify lint fmt check test test-unit test-integration test-fuzz coverage openapi docker-build docker-push docker-run clean
 
 # ── Multi-service layout ──────────────────────────────────────────────────────
 # Each service lives under src/services/<name>/ (main.py + Dockerfile) and
@@ -14,6 +14,7 @@
 SERVICE ?= api
 PY_DIRS := src/ tests/ scripts/
 PORT    ?= 8000
+BLITZ   := uv run --project cli blitz
 IMAGE   ?= ghcr.io/$(shell git config --get remote.origin.url | sed 's/.*github.com[:/]//' | sed 's/\.git$$//' | tr '[:upper:]' '[:lower:]')-$(SERVICE)
 
 help: ## Show this help
@@ -28,15 +29,23 @@ dev: ## Run a service with hot-reload (SERVICE=api, PORT=8000)
 domain: ## Scaffold a domain + tests and register it (DOMAIN=orders [ENTITY=Order] [SERVICE=api])
 	@test "$(origin DOMAIN)" = "command line" || \
 		(echo "usage: make domain DOMAIN=<snake_case> [ENTITY=<PascalCase>] [SERVICE=api]" && exit 1)
-	uv run python scripts/new_domain.py $(DOMAIN) --service $(SERVICE) $(if $(ENTITY),--entity $(ENTITY))
+	$(BLITZ) domain new $(DOMAIN) --service $(SERVICE) $(if $(ENTITY),--entity $(ENTITY))
 
-verify: ## Check everything without changing files: format, lint, types, tests (+ examples/)
+service: ## Scaffold a service: main.py, domains.py, Dockerfile (NAME=worker)
+	@test "$(origin NAME)" = "command line" || (echo "usage: make service NAME=<snake_case>" && exit 1)
+	$(BLITZ) service new $(NAME)
+
+cli: ## Run the blitz code-generator CLI (ARGS="domain list"; ARGS=--help for every command)
+	$(BLITZ) $(ARGS)
+
+verify: ## Check everything without changing files: format, lint, types, tests (+ examples/, cli/)
 	uv run ruff format --check $(PY_DIRS)
 	uv run ruff check $(PY_DIRS)
 	uv run mypy src/
 	uv run pytest
 	$(MAKE) -C examples/todo verify
 	$(MAKE) -C examples/consent verify
+	$(MAKE) -C cli verify
 
 lint: ## Run the Ruff linter
 	uv run ruff check $(PY_DIRS)

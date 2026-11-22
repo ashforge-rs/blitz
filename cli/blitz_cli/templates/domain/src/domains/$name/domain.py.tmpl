@@ -1,0 +1,82 @@
+from typing import TYPE_CHECKING
+
+from fastapi import APIRouter, status
+from returns.result import Result
+
+from deps import RequestContextDep
+from routing import ResultRouter
+from store.memory import InMemoryStore
+
+from .dependencies import ${Entity}ServiceDep
+from .errors import ${Entity}Error
+from .models import $Entity, Create${Entity}Request, Update${Entity}Request
+from .repository import ${Entity}Repository
+from .service import ${Entity}Service
+
+if TYPE_CHECKING:
+    from bootstrap import BootstrapContext
+
+
+class ${Plural}Domain:
+    """What bootstrap() returns and get_domain() looks up."""
+
+    def __init__(self, service: ${Entity}Service) -> None:
+        self.service = service
+
+    async def aclose(self) -> None:
+        """Called on shutdown — close anything bootstrap() opened."""
+
+
+_router = ResultRouter(prefix="/$route", tags=["$name"])
+
+
+@_router.get("/")
+async def list_$name(
+    svc: ${Entity}ServiceDep, ctx: RequestContextDep
+) -> Result[list[$Entity], ${Entity}Error]:
+    return await svc.list_all(ctx)
+
+
+@_router.post("/", status_code=status.HTTP_201_CREATED)
+async def create_$entity(
+    body: Create${Entity}Request, svc: ${Entity}ServiceDep, ctx: RequestContextDep
+) -> Result[$Entity, ${Entity}Error]:
+    return await svc.create(body, ctx)
+
+
+@_router.get("/{${entity}_id}")
+async def get_$entity(
+    ${entity}_id: str, svc: ${Entity}ServiceDep, ctx: RequestContextDep
+) -> Result[$Entity, ${Entity}Error]:
+    return await svc.get(${entity}_id, ctx)
+
+
+@_router.patch("/{${entity}_id}")
+async def update_$entity(
+    ${entity}_id: str,
+    body: Update${Entity}Request,
+    svc: ${Entity}ServiceDep,
+    ctx: RequestContextDep,
+) -> Result[$Entity, ${Entity}Error]:
+    return await svc.update(${entity}_id, body, ctx)
+
+
+@_router.delete("/{${entity}_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_$entity(
+    ${entity}_id: str, svc: ${Entity}ServiceDep, ctx: RequestContextDep
+) -> Result[None, ${Entity}Error]:
+    return await svc.delete(${entity}_id, ctx)
+
+
+def make_router() -> APIRouter:
+    return _router
+
+
+async def bootstrap(boot: BootstrapContext) -> ${Plural}Domain:
+    store: InMemoryStore[str, $Entity] = InMemoryStore()
+    service = ${Entity}Service(
+        repository=${Entity}Repository(store=store),
+        audit_backend=boot.audit_backend,
+        audit_integrity=boot.audit_integrity,
+    )
+    return ${Plural}Domain(service=service)

@@ -106,8 +106,6 @@ ignore = [
 # reads `-> Result[T, E]` return annotations at runtime.
 "src/domains/*/domain.py" = ["TC"]
 "src/domains/*/dependencies.py" = ["TC"]
-# Code templates: line length is only known after substitution (ruff formats the output).
-"scripts/new_domain.py" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

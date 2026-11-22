@@ -161,6 +161,29 @@ jobs:
         run: make verify
 
   # ────────────────────────────────────────────────────────────────────────────
+  # cli — the `blitz` code generator in cli/, its own uv project like the examples.
+  # ────────────────────────────────────────────────────────────────────────────
+  cli:
+    name: CLI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          enable-cache: true
+          python-version: ${{ env.PYTHON_PRIMARY }}
+
+      - name: Install dependencies
+        run: uv sync --frozen # fails if cli/uv.lock is out of date
+
+      - name: Verify
+        run: make verify
+
+  # ────────────────────────────────────────────────────────────────────────────
   # test — pytest on a matrix of Python versions.
   #
   # Coverage is enforced at 80 %. Adjust --cov-fail-under or remove it to relax.
