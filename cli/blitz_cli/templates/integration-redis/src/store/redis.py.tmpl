@@ -1,0 +1,40 @@
+"""KeyValueStore on Redis: pydantic models stored as JSON under ``<prefix><key>``."""
+
+from typing import TYPE_CHECKING
+
+from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
+
+
+class RedisStore[V: BaseModel]:
+    """Satisfies ``KeyValueStore[str, V]``. Needs a client made with ``decode_responses=True``.
+
+    Keys share one Redis database, so give every store its own ``prefix``.
+    """
+
+    def __init__(self, client: Redis, model: type[V], *, prefix: str) -> None:
+        self._client = client
+        self._model = model
+        self._prefix = prefix
+
+    def _key(self, key: str) -> str:
+        return f"{self._prefix}{key}"
+
+    async def get(self, key: str) -> V | None:
+        raw = await self._client.get(self._key(key))
+        return None if raw is None else self._model.model_validate_json(raw)
+
+    async def set(self, key: str, value: V) -> None:
+        await self._client.set(self._key(key), value.model_dump_json())
+
+    async def delete(self, key: str) -> bool:
+        return bool(await self._client.delete(self._key(key)))
+
+    async def exists(self, key: str) -> bool:
+        return bool(await self._client.exists(self._key(key)))
+
+    async def keys(self) -> list[str]:
+        found = [k async for k in self._client.scan_iter(match=f"{self._prefix}*")]
+        return sorted(str(k).removeprefix(self._prefix) for k in found)

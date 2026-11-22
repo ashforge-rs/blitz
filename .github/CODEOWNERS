@@ -1,0 +1,14 @@
+# CODEOWNERS
+# Each line is a file pattern followed by one or more owners.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @ashforge-rs
+
+# Dependency manifests — require explicit approval
+pyproject.toml @ashforge-rs
+uv.lock @ashforge-rs
+
+# CI / release infrastructure
+.github/ @ashforge-rs
+release-please-config.json @ashforge-rs
+.release-please-manifest.json @ashforge-rs

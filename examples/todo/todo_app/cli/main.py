@@ -1,0 +1,170 @@
+"""Typer entry point: parses the command line, runs one command, exits with its code."""
+
+import asyncio
+import json
+import os
+import sys
+from typing import TYPE_CHECKING, Annotated
+
+import typer
+from config import get_settings
+from loguru import logger
+
+from todo_app.kernel import StorageUnavailableError
+from todo_app.persistence import SchemaOutOfDateError
+from todo_app.settings import TodoSettings
+
+from . import commands
+from .composition import migrate_all, open_services
+from .exit_codes import ExitCode
+from .seed import SeedingRefusedError, seed_demo_data
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from audit.backend import AuditBackend
+    from loguru import Record
+
+    from .composition import Services
+
+#: blitz's LoguruAuditBackend writes audit events through loguru under this name.
+_AUDIT_LOGGER = "audit.backends.loguru"
+
+IdempotencyKey = Annotated[
+    str | None,
+    typer.Option(
+        "--idempotency-key",
+        help="Random value (a UUID). Retrying with the same key repeats nothing.",
+        show_default=False,
+    ),
+]
+
+
+def configure_logging(*, verbose: bool) -> None:
+    """Diagnostics to stderr (stdout carries only the JSON result).
+
+    Audit events are not diagnostics: they pass whatever the verbosity, or a
+    quiet run would silently drop the audit trail of every successful command.
+    """
+    threshold = logger.level("INFO" if verbose else "WARNING").no
+
+    def keep(record: Record) -> bool:
+        return record["name"] == _AUDIT_LOGGER or record["level"].no >= threshold
+
+    logger.remove()
+    logger.add(sys.stderr, level=0, filter=keep)
+
+
+def create_cli(
+    *,
+    settings: TodoSettings | None = None,
+    audit_backend: AuditBackend | None = None,
+    configure_logs: bool = True,
+    environment: str | None = None,
+) -> typer.Typer:
+    """The CLI application.  Tests inject settings and an audit backend; ``configure_logs``
+    is off there so a test run doesn't replace the process's log handlers."""
+    cli = typer.Typer(
+        help="Todo app command line: the same use cases as the HTTP API.",
+        epilog=f"create-todo authenticates with the API token in ${commands.TOKEN_ENV}.",
+        no_args_is_help=True,
+        add_completion=False,
+        # Rich tracebacks print local variables, which would include API tokens.
+        pretty_exceptions_enable=False,
+    )
+
+    def run(command: Callable[[Services, commands.Console], Awaitable[ExitCode]]) -> None:
+        async def _with_services() -> ExitCode:
+            console = commands.Console()
+            try:
+                async with open_services(
+                    settings or TodoSettings(), audit_backend=audit_backend
+                ) as services:
+                    return await command(services, console)
+            except SchemaOutOfDateError as exc:
+                return console.error("schema_out_of_date", str(exc), ExitCode.CONFIG)
+            except StorageUnavailableError as exc:
+                # e.g. Postgres not started, wrong port or credentials, missing database.
+                return console.error("storage_unavailable", str(exc), ExitCode.TEMPFAIL)
+
+        raise typer.Exit(asyncio.run(_with_services()))
+
+    @cli.callback()
+    def _root(
+        verbose: Annotated[
+            bool, typer.Option("--verbose", "-v", help="Log diagnostics to stderr.")
+        ] = False,
+    ) -> None:
+        if configure_logs:
+            configure_logging(verbose=verbose)
+
+    @cli.command()
+    def register(
+        email: Annotated[str, typer.Option(help="The user's email address.")],
+        name: Annotated[str, typer.Option(help="The user's display name.")],
+        idempotency_key: IdempotencyKey = None,
+    ) -> None:
+        """Register a user and print their API token (shown once)."""
+        run(
+            lambda services, console: commands.register(
+                services, console, email=email, name=name, idempotency_key=idempotency_key
+            )
+        )
+
+    @cli.command("create-todo")
+    def create_todo(
+        title: Annotated[str, typer.Option(help="What to do.")],
+        idempotency_key: IdempotencyKey = None,
+    ) -> None:
+        """Create a todo owned by the user whose API token is in $TODO_API_TOKEN."""
+        # Read from the environment, never a flag: argv leaks into shell history and `ps`.
+        token = os.environ.get(commands.TOKEN_ENV)
+        run(
+            lambda services, console: commands.create_todo(
+                services, console, title=title, idempotency_key=idempotency_key, token=token
+            )
+        )
+
+    @cli.command()
+    def seed() -> None:
+        """Load demo users and todos (local development only; refused in production)."""
+
+        async def _seed(services: Services, console: commands.Console) -> ExitCode:
+            try:
+                report = await seed_demo_data(
+                    services, environment=environment or get_settings().ENVIRONMENT
+                )
+            except SeedingRefusedError as exc:
+                return console.error("seed_refused", str(exc), ExitCode.CONFIG)
+            return console.result(
+                {
+                    "replayed": report.replayed,
+                    "users": [
+                        {"email": u.email, "api_token": u.api_token, "todos": len(u.todos)}
+                        for u in report.users
+                    ],
+                    "already_present": report.existing,
+                }
+            )
+
+        run(_seed)
+
+    db = typer.Typer(help="Database maintenance.", no_args_is_help=True)
+    cli.add_typer(db, name="db")
+
+    @db.command("upgrade")
+    def upgrade() -> None:
+        """Apply pending migrations for every context (a release step in production)."""
+
+        async def _upgrade() -> None:
+            await migrate_all(settings or TodoSettings())
+
+        asyncio.run(_upgrade())
+        typer.echo(json.dumps({"migrated": ["users", "todos"]}))
+
+    return cli
+
+
+def main(prog_name: str | None = None) -> None:
+    """Entry point of the ``todo`` console script and of ``python -m todo_app.cli``."""
+    create_cli()(prog_name=prog_name)

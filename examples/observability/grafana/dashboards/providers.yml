@@ -1,0 +1,15 @@
+apiVersion: 1
+
+providers:
+  - name: todo
+    folder: Todo app
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/todo
+  - name: consent
+    folder: Consent app
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/consent

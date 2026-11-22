@@ -1,0 +1,18 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Receive, Scope, Send
+
+
+class ${Pascal}Middleware:
+    """$words — runs around every HTTP request (pure ASGI, so streaming is unaffected)."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        # Before the request: read scope["path"], scope["headers"], scope["state"]["ctx"] …
+        await self.app(scope, receive, send)

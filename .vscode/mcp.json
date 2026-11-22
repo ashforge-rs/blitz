@@ -1,0 +1,50 @@
+{
+    "servers": {
+        // Context7 — current, version-specific library docs (FastAPI, pydantic,
+        // pydantic-settings, returns, limits, Python 3.15) so agents check APIs
+        // instead of guessing. Hosted by Upstash; queries contain library names and
+        // topics only. The API key is optional but raises rate limits — get a free
+        // one at https://context7.com/dashboard.
+        "context7": {
+            "type": "http",
+            "url": "https://mcp.context7.com/mcp",
+            "headers": {
+                "Authorization": "Bearer ${input:context7ApiKey}"
+            }
+        },
+        // GitHub (official, github/github-mcp-server) — PRs, review threads, issues,
+        // Actions runs and logs, Dependabot PRs. Hosted by GitHub; VS Code signs in
+        // with your GitHub account (OAuth), so no token is stored here.
+        "github": {
+            "type": "http",
+            "url": "https://api.githubcopilot.com/mcp/"
+        },
+        // Grafana (grafana/mcp-grafana) — query Prometheus metrics, dashboards and
+        // alert rules from the local stack (`docker compose up`, Grafana on :3000).
+        // Create a service account token in Grafana: Administration → Users and
+        // access → Service accounts (Viewer role is enough for read-only use).
+        "grafana": {
+            "type": "stdio",
+            "command": "uvx",
+            "args": ["mcp-grafana@2.2.0"],
+            "env": {
+                "GRAFANA_URL": "http://localhost:3000",
+                "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${input:grafanaToken}"
+            }
+        }
+    },
+    "inputs": [
+        {
+            "id": "context7ApiKey",
+            "type": "promptString",
+            "description": "Context7 API key (optional — https://context7.com/dashboard)",
+            "password": true
+        },
+        {
+            "id": "grafanaToken",
+            "type": "promptString",
+            "description": "Grafana service account token for http://localhost:3000",
+            "password": true
+        }
+    ]
+}

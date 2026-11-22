@@ -1,0 +1,69 @@
+# Prometheus alert rules for the todo example (load next to grafana/alerts.yml).
+groups:
+  - name: todo-audit
+    interval: 30s
+    rules:
+      - alert: AuditOutboxStale
+        expr: max by (outbox) (todoapp_audit_outbox_oldest_age_seconds) > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Audit entries undelivered for over 5 minutes ({{ $labels.outbox }})"
+          description: >
+            The oldest audit entry in {{ $labels.outbox }} has waited
+            {{ $value | humanizeDuration }}. Changes still commit, but the audit
+            trail is falling behind: check the audit backend and the relay logs
+            (audit.outbox.delivery_failed). /health is returning 503.
+
+      - alert: AuditDeliveryFailing
+        expr: |
+          sum by (outbox) (rate(todoapp_audit_delivery_failures_total[10m])) > 0
+          unless
+          sum by (outbox) (rate(todoapp_audit_delivered_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Audit delivery failing with no successes ({{ $labels.outbox }})"
+          description: >
+            Every delivery attempt for {{ $labels.outbox }} has failed for 10 minutes.
+            Entries are kept and retried, so nothing is lost yet; AuditOutboxStale
+            fires if this continues.
+
+  - name: todo-storage
+    interval: 30s
+    rules:
+      - alert: StorageUnavailable
+        expr: |
+          (sum(rate(todoapp_users_storage_failures_total[5m])) or vector(0))
+          +
+          (sum(rate(todoapp_todos_created_total{result="error"}[5m])) or vector(0))
+          > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database unavailable ({{ $value | humanize }} failures/s)"
+          description: >
+            Use cases are failing with storage_error (HTTP 500, CLI exit 75).
+            Check database health, connection limits and TODO_DB_CONNECT_TIMEOUT_SECONDS.
+
+  - name: todo-auth
+    interval: 1m
+    rules:
+      - alert: InvalidTokenSpike
+        expr: |
+          sum(rate(todoapp_auth_attempts_total{result="invalid"}[5m])) > 1
+          and
+          sum(rate(todoapp_auth_attempts_total{result="invalid"}[5m]))
+            / sum(rate(todoapp_auth_attempts_total[5m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unusual share of invalid API tokens"
+          description: >
+            More than 20 % of authentication attempts (and over 1/s) use unknown
+            tokens: possible credential stuffing, or clients holding a token that
+            an idempotent registration retry revoked.

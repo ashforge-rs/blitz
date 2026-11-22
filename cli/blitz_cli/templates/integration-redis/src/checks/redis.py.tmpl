@@ -1,0 +1,20 @@
+from typing import Any
+
+from redis.asyncio import Redis
+
+from config import get_settings
+
+
+async def check_redis() -> dict[str, Any]:
+    """Readiness of Redis (REDIS_URL); healthy and skipped when it is not configured."""
+    url = get_settings().REDIS_URL.get_secret_value()
+    if not url:
+        return {"name": "redis", "healthy": True, "skipped": "REDIS_URL not set"}
+    client = Redis.from_url(url, socket_connect_timeout=2)
+    try:
+        await client.ping()
+    except Exception as exc:  # noqa: BLE001 — any failure marks the check unhealthy
+        return {"name": "redis", "healthy": False, "error": type(exc).__name__}
+    finally:
+        await client.aclose()
+    return {"name": "redis", "healthy": True}

@@ -1,0 +1,17 @@
+from typing import Annotated
+
+from fastapi import Depends, Request
+
+from state import get_domain
+
+from .service import ${Entity}Service
+
+
+def _get_${entity}_service(request: Request) -> ${Entity}Service:
+    # Imported lazily: domain.py imports this module.
+    from .domain import ${Plural}Domain
+
+    return get_domain(request, ${Plural}Domain).service
+
+
+${Entity}ServiceDep = Annotated[${Entity}Service, Depends(_get_${entity}_service)]

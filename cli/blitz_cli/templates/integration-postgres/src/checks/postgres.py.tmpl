@@ -1,0 +1,21 @@
+from typing import Any
+
+import asyncpg
+
+from config import get_settings
+
+
+async def check_postgres() -> dict[str, Any]:
+    """Readiness of PostgreSQL (DATABASE_URL); healthy and skipped when it is not configured."""
+    dsn = get_settings().DATABASE_URL.get_secret_value()
+    if not dsn:
+        return {"name": "postgres", "healthy": True, "skipped": "DATABASE_URL not set"}
+    try:
+        connection = await asyncpg.connect(dsn, timeout=2)
+        try:
+            await connection.fetchval("SELECT 1")
+        finally:
+            await connection.close()
+    except Exception as exc:  # noqa: BLE001 — any failure marks the check unhealthy
+        return {"name": "postgres", "healthy": False, "error": type(exc).__name__}
+    return {"name": "postgres", "healthy": True}

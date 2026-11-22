@@ -1,0 +1,1 @@
+description = "AuthProvider (authenticate + authorize) in src/auth/providers/, deny-by-default, with a test; wired into the service's create_app()"

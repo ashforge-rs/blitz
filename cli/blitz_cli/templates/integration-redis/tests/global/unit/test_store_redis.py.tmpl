@@ -1,0 +1,59 @@
+import fnmatch
+
+from pydantic import BaseModel
+
+from store.protocol import KeyValueStore
+from store.redis import RedisStore
+
+
+class Item(BaseModel):
+    id: str
+    name: str
+
+
+class FakeRedis:
+    """The few Redis commands RedisStore uses, in memory."""
+
+    def __init__(self) -> None:
+        self.data: dict[str, str] = {}
+
+    async def get(self, key):
+        return self.data.get(key)
+
+    async def set(self, key, value):
+        self.data[key] = value
+
+    async def delete(self, key):
+        return int(self.data.pop(key, None) is not None)
+
+    async def exists(self, key):
+        return int(key in self.data)
+
+    async def scan_iter(self, match):
+        for key in list(self.data):
+            if fnmatch.fnmatch(key, match):
+                yield key
+
+
+def _store(client: FakeRedis, prefix: str = "items:") -> RedisStore[Item]:
+    return RedisStore(client, Item, prefix=prefix)  # type: ignore[arg-type]
+
+
+async def test_roundtrip_and_keys() -> None:
+    client = FakeRedis()
+    store = _store(client)
+    assert isinstance(store, KeyValueStore)
+    item = Item(id="1", name="a")
+    await store.set("1", item)
+    assert await store.get("1") == item
+    assert await store.exists("1")
+    assert await store.keys() == ["1"]
+    assert await store.delete("1")
+    assert not await store.delete("1")
+    assert await store.get("1") is None
+
+
+async def test_prefixes_keep_stores_apart() -> None:
+    client = FakeRedis()
+    await _store(client, "a:").set("1", Item(id="1", name="a"))
+    assert await _store(client, "b:").keys() == []

@@ -1,0 +1,14 @@
+{
+    "release-type": "python",
+    "packages": {
+        ".": {
+            "changelog-path": "CHANGELOG.md",
+            "release-type": "python",
+            "include-component-in-tag": false,
+            "bump-minor-pre-major": true,
+            "bump-patch-for-minor-pre-major": true,
+            "draft": false,
+            "prerelease": false
+        }
+    }
+}

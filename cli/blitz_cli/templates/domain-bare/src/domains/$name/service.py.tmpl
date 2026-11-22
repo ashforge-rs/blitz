@@ -1,0 +1,73 @@
+from typing import TYPE_CHECKING, cast
+
+from loguru import logger
+from returns.result import Failure, Result, Success
+
+from audit.backend import AuditBackend, AuditIntegrity, AuditResult
+from audit.helpers import log_operation
+from service import Service
+
+from .errors import ${Entity}Error, ${Entity}ErrorCode
+
+if TYPE_CHECKING:
+    from context import RequestContext
+
+    from .models import $Entity
+
+    from .repository import ${Entity}Repository
+
+
+class ${Entity}Service(Service):
+    """Business logic for $name. Every method returns ``Result[T, ${Entity}Error]``."""
+
+    def __init__(
+        self,
+        repository: ${Entity}Repository,
+        audit_backend: AuditBackend,
+        audit_integrity: AuditIntegrity,
+    ) -> None:
+        self._repo = repository
+        self._audit = audit_backend
+        self._integrity = audit_integrity
+
+    def _principal(self, ctx: RequestContext) -> str | None:
+        return cast("str | None", ctx.get("principal"))
+
+    async def _audit_op(
+        self,
+        ctx: RequestContext,
+        operation: str,
+        ${entity}_id: str | None,
+        result: AuditResult = AuditResult.SUCCESS,
+    ) -> None:
+        await log_operation(
+            self._audit, self._integrity, ctx, operation, result=result, resource_id=${entity}_id
+        )
+
+    async def _storage_failure(
+        self, exc: Exception, ctx: RequestContext, operation: str, ${entity}_id: str | None = None
+    ) -> Failure[${Entity}Error]:
+        logger.error(
+            "${entity}.storage_failed", operation=operation, ${entity}_id=${entity}_id, error=str(exc)
+        )
+        if operation.split(".")[-1] in {"create", "update", "delete"}:
+            await self._audit_op(ctx, operation, ${entity}_id, AuditResult.FAILURE)
+        return Failure(${Entity}Error(${Entity}ErrorCode.STORAGE_ERROR, str(exc), ${entity}_id))
+
+    @staticmethod
+    def _not_found(${entity}_id: str) -> Failure[${Entity}Error]:
+        message = f"{${entity}_id!r} not found"
+        return Failure(${Entity}Error(${Entity}ErrorCode.NOT_FOUND, message, ${entity}_id))
+
+    async def get(self, ${entity}_id: str, ctx: RequestContext) -> Result[$Entity, ${Entity}Error]:
+        try:
+            found = await self._repo.find_by_id(${entity}_id)
+        except Exception as exc:  # noqa: BLE001 — storage boundary
+            return await self._storage_failure(exc, ctx, "$name.get", ${entity}_id)
+        return Success(found) if found is not None else self._not_found(${entity}_id)
+
+    async def list_all(self, ctx: RequestContext) -> Result[list[$Entity], ${Entity}Error]:
+        try:
+            return Success(await self._repo.find_all())
+        except Exception as exc:  # noqa: BLE001 — storage boundary
+            return await self._storage_failure(exc, ctx, "$name.list_all")

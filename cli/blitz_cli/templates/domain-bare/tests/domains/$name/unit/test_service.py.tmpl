@@ -1,0 +1,40 @@
+from unittest.mock import MagicMock
+
+import pytest
+from returns.result import Failure, Success
+
+from audit.backends.noop import NoopAuditBackend
+from audit.integrity import NoIntegrity
+from domains.$name.errors import ${Entity}ErrorCode
+from domains.$name.models import $Entity
+from domains.$name.repository import ${Entity}Repository
+from domains.$name.service import ${Entity}Service
+from store.memory import InMemoryStore
+
+
+@pytest.fixture
+def service() -> ${Entity}Service:
+    store: InMemoryStore[str, $Entity] = InMemoryStore()
+    return ${Entity}Service(
+        repository=${Entity}Repository(store=store),
+        audit_backend=NoopAuditBackend(),
+        audit_integrity=NoIntegrity(),
+    )
+
+
+@pytest.fixture
+def ctx() -> MagicMock:
+    mock = MagicMock()
+    mock.request_id = "test-request-id"
+    mock.get.return_value = None
+    return mock
+
+
+async def test_list_starts_empty(service, ctx):
+    assert await service.list_all(ctx) == Success([])
+
+
+async def test_get_missing_is_not_found(service, ctx):
+    result = await service.get("missing", ctx)
+    assert isinstance(result, Failure)
+    assert result.failure().code == ${Entity}ErrorCode.NOT_FOUND

@@ -1,0 +1,28 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from store.protocol import KeyValueStore
+
+    from .models import $Entity
+
+
+class ${Entity}Repository:
+    """Data access for ${entity_words} records — depends only on the KeyValueStore protocol."""
+
+    def __init__(self, store: KeyValueStore[str, $Entity]) -> None:
+        self._store = store
+
+    async def find_by_id(self, ${entity}_id: str) -> $Entity | None:
+        return await self._store.get(${entity}_id)
+
+    async def find_all(self) -> list[$Entity]:
+        keys = await self._store.keys()
+        found = [await self._store.get(k) for k in keys]
+        return [x for x in found if x is not None]
+
+    async def save(self, $entity: $Entity) -> $Entity:
+        await self._store.set($entity.id, $entity)
+        return $entity
+
+    async def delete(self, ${entity}_id: str) -> bool:
+        return await self._store.delete(${entity}_id)

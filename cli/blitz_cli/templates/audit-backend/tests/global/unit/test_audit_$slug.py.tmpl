@@ -1,0 +1,17 @@
+from audit.backend import AuditBackend, AuditEvent
+from audit.backends.$slug import ${Pascal}AuditBackend
+
+
+class _Collect(AuditBackend):
+    def __init__(self) -> None:
+        self.events: list[AuditEvent] = []
+
+    async def log(self, event: AuditEvent) -> None:
+        self.events.append(event)
+
+
+async def test_every_event_reaches_the_target() -> None:
+    collected = _Collect()
+    event = AuditEvent(path="/v1/things")
+    await ${Pascal}AuditBackend(fallback=collected).log(event)
+    assert collected.events == [event]

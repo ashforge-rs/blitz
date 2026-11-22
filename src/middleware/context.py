@@ -1,0 +1,72 @@
+import re
+from typing import TYPE_CHECKING
+from uuid import uuid4
+
+from starlette.datastructures import MutableHeaders
+
+from context import RequestContext, _ctx_var
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+# Accept client-supplied request IDs only if they are short and made of safe
+# characters (UUIDs, ULIDs, trace IDs).  Anything else — oversized values,
+# whitespace, control characters that could forge log lines — is replaced with
+# a freshly generated ID.
+_REQUEST_ID_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+
+
+def _request_id_from(raw: bytes) -> str:
+    try:
+        candidate = raw.decode("ascii")
+    except UnicodeDecodeError:
+        return uuid4().hex
+    return candidate if _REQUEST_ID_RE.fullmatch(candidate) else uuid4().hex
+
+
+class RequestContextMiddleware:
+    """
+    Create a :class:`~blitz.context.RequestContext` for every request.
+
+    The context is stored on ``request.state.ctx`` for use in route handlers
+    and is also pushed into the module-level ``ContextVar`` for utility code
+    that does not hold a reference to the request.
+
+    Appends an ``X-Request-ID`` header to every response.  A client-supplied
+    ``X-Request-ID`` is reused only if it is at most 128 characters of
+    ``[A-Za-z0-9._:-]``; otherwise a new UUID4 hex is generated.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Reconstruct lightweight header view from raw ASGI scope
+        headers = dict(scope.get("headers", []))
+        request_id = _request_id_from(headers.get(b"x-request-id", b""))
+
+        # Store context on request.state so route handlers can reach it via
+        # request.state.ctx.  Go through Request.state rather than scope["state"]
+        # directly: under a real ASGI server the latter is the plain lifespan-state
+        # dict, which Starlette wraps for attribute access.
+        from starlette.requests import Request
+
+        request = Request(scope, receive, send)
+        ctx = RequestContext(request=request, request_id=request_id)
+        request.state.ctx = ctx
+
+        token = _ctx_var.set(ctx)
+
+        async def _send(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message).append("X-Request-ID", request_id)
+            await send(message)
+
+        try:
+            await self.app(scope, receive, _send)
+        finally:
+            _ctx_var.reset(token)

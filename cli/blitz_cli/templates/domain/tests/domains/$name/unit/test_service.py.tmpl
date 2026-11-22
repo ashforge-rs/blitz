@@ -1,0 +1,56 @@
+from unittest.mock import MagicMock
+
+import pytest
+from returns.result import Failure, Success
+
+from audit.backends.noop import NoopAuditBackend
+from audit.integrity import NoIntegrity
+from domains.$name.errors import ${Entity}ErrorCode
+from domains.$name.models import $Entity, Create${Entity}Request, Update${Entity}Request
+from domains.$name.repository import ${Entity}Repository
+from domains.$name.service import ${Entity}Service
+from store.memory import InMemoryStore
+
+SAMPLE = $sample
+
+
+@pytest.fixture
+def service() -> ${Entity}Service:
+    store: InMemoryStore[str, $Entity] = InMemoryStore()
+    return ${Entity}Service(
+        repository=${Entity}Repository(store=store),
+        audit_backend=NoopAuditBackend(),
+        audit_integrity=NoIntegrity(),
+    )
+
+
+@pytest.fixture
+def ctx() -> MagicMock:
+    mock = MagicMock()
+    mock.request_id = "test-request-id"
+    mock.get.return_value = None
+    return mock
+
+
+async def test_create_then_get(service, ctx):
+    created = (await service.create(Create${Entity}Request.model_validate(SAMPLE), ctx)).unwrap()
+    assert await service.get(created.id, ctx) == Success(created)
+
+
+async def test_get_missing_is_not_found(service, ctx):
+    result = await service.get("missing", ctx)
+    assert isinstance(result, Failure)
+    assert result.failure().code == ${Entity}ErrorCode.NOT_FOUND
+
+
+async def test_update_changes_only_sent_fields(service, ctx):
+    created = (await service.create(Create${Entity}Request.model_validate(SAMPLE), ctx)).unwrap()
+    updated = (await service.update(created.id, Update${Entity}Request.model_validate($sample_update), ctx)).unwrap()
+    assert updated.model_dump(mode="json")["$first_field"] == $first_update
+    assert updated.created_at == created.created_at
+
+
+async def test_delete_twice_is_not_found(service, ctx):
+    created = (await service.create(Create${Entity}Request.model_validate(SAMPLE), ctx)).unwrap()
+    assert await service.delete(created.id, ctx) == Success(None)
+    assert isinstance(await service.delete(created.id, ctx), Failure)

@@ -1,0 +1,49 @@
+description = "PostgreSQL: a KeyValueStore on a JSONB table, DATABASE_URL, a /health check and a compose service (`blitz add postgres [--domain NAME]`)"
+dependencies = ["asyncpg>=0.30"]
+mypy_ignore = ["asyncpg.*"]
+health_check = "check_postgres"
+health_module = "checks.postgres"
+
+[[settings]]
+name = "DATABASE_URL"
+annotation = "SecretStr"
+default = 'SecretStr("")'
+comment = "PostgreSQL DSN for PostgresStore and its health check. Empty: in memory."
+env = "DATABASE_URL=postgresql://blitz:blitz@localhost:5432/blitz"
+
+[compose]
+service = "postgres"
+yaml = """
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: blitz
+      POSTGRES_PASSWORD: blitz
+      POSTGRES_DB: blitz
+    ports:
+      - "5432:5432"
+"""
+
+[domain]
+setting = "DATABASE_URL"
+imports = [
+  "import asyncpg",
+  "from store.postgres import PostgresStore",
+  "from store.protocol import KeyValueStore",
+]
+store = """
+    store: KeyValueStore[str, $Entity] = InMemoryStore()
+    pool: asyncpg.Pool | None = None
+    if dsn := boot.settings.DATABASE_URL.get_secret_value():  # unset (tests): in memory
+        pool = await asyncpg.create_pool(dsn)
+        store = PostgresStore(pool, $Entity, namespace="$name")
+        try:
+            await store.ensure_table()
+        except BaseException:  # not handed to the domain yet, so aclose() would miss it
+            await pool.close()
+            raise
+"""
+close = """
+    if pool is not None:
+        domain.closers.append(pool.close)
+"""

@@ -1,0 +1,169 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blitz"
+version = "0.3.0"
+description = "FastAPI boilerplate"
+requires-python = ">=3.15"
+dependencies = [
+  "fastapi>=0.165.0",
+  "uvicorn[standard]>=0.54.0",
+  "orjson>=3.13.0",
+  "pydantic-settings>=2.16.3",
+  "loguru>=0.8.0",
+  "limits>=5.8.0",
+  "prometheus-client>=0.26.0",
+  "prometheus-fastapi-instrumentator>=8.1.0",
+  "python-multipart>=0.0.34",
+  "opentelemetry-sdk>=1.45.2",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.2",
+  "returns>=0.30.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=9.2.0",
+  "pytest-asyncio>=1.5.0",
+  "pytest-cov>=7.1.0",
+  "httpx>=0.28.1",
+  "ruff>=0.17.6",
+  "hypothesis>=6.170.16",
+  "rich>=15.0.0",
+  "asgi-lifespan>=2.1.0",
+  "mypy>=2.4.1",
+  "dirty-equals>=0.11",
+]
+
+[tool.uv]
+# Keep every developer and CI on the same uv minor (lockfile format, resolver).
+# Single source of truth for CI: setup-uv reads this and installs the newest
+# matching release. The Dockerfiles and the uv-lock pre-commit hook pin exact
+# versions, and Dependabot bumps those (docker / pre-commit ecosystems).
+# For a uv minor upgrade, change this line.
+required-version = "~=0.13.7"
+
+[tool.hatch.build.targets.wheel]
+# Ship everything under src/ as top-level modules (src/config.py → config).
+# No per-module list to keep in sync when a module is added.
+only-include = ["src"]
+sources = ["src"]
+exclude = ["**/Dockerfile"]
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py315"
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes
+  "I",    # isort
+  "UP",   # pyupgrade
+  "B",    # flake8-bugbear
+  "SIM",  # flake8-simplify
+  "RET",  # flake8-return — flag implicit None returns and redundant else
+  "RUF",  # Ruff-native rules
+  "TCH",  # flake8-type-checking — enforce TYPE_CHECKING guards
+  "ANN",  # flake8-annotations — require type annotations on all defs
+  "ERA",  # eradicate — flag commented-out code
+  "PTH",  # flake8-use-pathlib — prefer pathlib over os.path
+  "TRY",  # flake8-tryceratops — discourage bare except, long try blocks
+  "EM",   # flake8-errmsg — no string literals directly in raise
+  "PERF", # perflint — avoid O(n) anti-patterns
+  "ASYNC", # flake8-async — blocking calls / misuse inside async code
+  "S",     # flake8-bandit — security lint (replaces a separate bandit step)
+  "BLE",   # flake8-blind-except — `except Exception` needs a justification
+  "PT",    # flake8-pytest-style
+  "DTZ",   # flake8-datetimez — no naive datetimes
+  "LOG",   # flake8-logging
+  "G",     # flake8-logging-format — no eager f-strings in log calls
+  "TID",   # flake8-tidy-imports — banned APIs (see below)
+]
+ignore = [
+  "ANN401", # Any is allowed where explicitly needed
+  "TRY003", # allow long exception messages (we use ItemError, not raw strings)
+  "EM101",  # allow string in raise for HTTPException detail
+  "EM102",  # allow f-string in raise
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"__future__.annotations".msg = "Redundant on Python 3.14+ — annotations are evaluated lazily (PEP 649). See AGENTS.md, Gotchas."
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: no annotation requirements, allow commented examples, allow broad raises, allow assert
+"tests/**" = ["ANN", "ERA", "TRY", "EM", "PTH", "TCH", "S101"]
+# FastAPI resolves route/dependency/handler annotations at runtime, so their
+# imports must stay real imports (not TYPE_CHECKING-only).
+"src/routes/**" = ["TC"]
+"src/errors/handlers.py" = ["TC"]
+"src/auth/dependency.py" = ["TC"]
+"src/deps.py" = ["TC"]
+"src/routing.py" = ["TC"]
+# Domain routes: FastAPI resolves Annotated[..., Depends] params and ResultRouter
+# reads `-> Result[T, E]` return annotations at runtime.
+"src/domains/*/domain.py" = ["TC"]
+"src/domains/*/dependencies.py" = ["TC"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["src"]
+# --strict-markers / --strict-config: typos in marks or config keys are errors.
+addopts = "-q --no-header --strict-markers --strict-config"
+xfail_strict = true # an xfail test that unexpectedly passes fails the run
+# Turn every warning into an error so deprecations surface before they break.
+# Add narrowly-scoped "ignore:..." entries below for third-party noise.
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["src"]
+# Process entry points (uvicorn bootstrap) — exercised by `make dev`, not tests.
+omit = ["src/services/*/main.py"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+]
+
+[tool.mypy]
+python_version = "3.15"
+mypy_path = "src"
+# Resolve all packages from mypy_path (src/) rather than site-packages.
+# Without this, mypy finds the installed blitz wheel in .venv and complains
+# that first-party packages like `example` and `store` lack py.typed markers.
+explicit_package_bases = true
+
+# --- Strictness ---
+strict = true
+# Even stricter than strict:
+warn_unreachable = true       # flag dead branches (e.g. missing Err case)
+warn_return_any = true        # no silent Any leaking out of typed functions
+disallow_any_explicit = false # Any is allowed when you write it explicitly
+# result library ships py.typed so mypy can check Ok/Err fully.
+plugins = []
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+# Test functions take pytest fixtures as untyped parameters; annotating them
+# adds noise without any real safety benefit.  Real type errors in test helpers
+# and internal classes are still caught by check_untyped_defs = true above.
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+  "prometheus_client.*",
+  "limits.*",
+  "prometheus_fastapi_instrumentator.*",
+  "opentelemetry.*",
+]
+ignore_missing_imports = true
+ignore_errors = true

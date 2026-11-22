@@ -1,0 +1,8 @@
+description = "Domain without CRUD routes (--no-crud): entity, store, service helpers and an empty router; add routes with `blitz g endpoint`"
+extends = "domain"
+exclude = [
+  "tests/domains/$name/integration/__init__.py",
+  "tests/domains/$name/integration/test_routes.py",
+  "tests/domains/$name/fuzz/__init__.py",
+  "tests/domains/$name/fuzz/test_fuzz.py",
+]

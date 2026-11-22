@@ -1,0 +1,107 @@
+version: 2
+# commit-message: `include: "scope"` appends the scope itself — (deps) for runtime
+# deps, (deps-dev) for development deps — so prefixes must not contain one.
+# Result: "build(deps): ...", "chore(deps-dev): ...", "ci(deps): ...".
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    rebase-strategy: "auto"
+    commit-message:
+      prefix: "build"
+      prefix-development: "chore"
+      include: "scope"
+    groups:
+      python-runtime:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]
+      python-dev:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+    ignore:
+      # Major bumps are reviewed manually — open-pull-requests-limit keeps noise low
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "terraform"
+    directory: "/infra"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    rebase-strategy: "auto"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    groups:
+      terraform-providers:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    rebase-strategy: "auto"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  # Base images in src/services/*/Dockerfile (python, uv).
+  - package-ecosystem: "docker"
+    directories: ["/src/services/*"]
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    rebase-strategy: "auto"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    groups:
+      docker-images:
+        patterns: ["*"]
+    ignore:
+      # A Python minor bump also needs requires-python, ruff/mypy targets and
+      # CI changes — do it as a deliberate upgrade, not a Dependabot PR.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # Hook revisions in .pre-commit-config.yaml.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    rebase-strategy: "auto"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      pre-commit-hooks:
+        patterns: ["*"]
+    labels:
+      - "dependencies"

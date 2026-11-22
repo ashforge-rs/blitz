@@ -1,0 +1,39 @@
+description = "Redis: a KeyValueStore on Redis, REDIS_URL, a /health check and a compose service (`blitz add redis [--domain NAME]`)"
+dependencies = ["redis>=5.2"]
+health_check = "check_redis"
+health_module = "checks.redis"
+
+[[settings]]
+name = "REDIS_URL"
+annotation = "SecretStr"  # a Redis URL can carry a password (redis://:pw@host)
+default = 'SecretStr("")'
+comment = "Redis for RedisStore and its health check. Empty: stores stay in memory."
+env = "REDIS_URL=redis://localhost:6379/0"
+
+[compose]
+service = "redis"
+yaml = """
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+"""
+
+[domain]
+setting = "REDIS_URL"
+imports = [
+  "from redis.asyncio import Redis",
+  "from store.protocol import KeyValueStore",
+  "from store.redis import RedisStore",
+]
+store = """
+    store: KeyValueStore[str, $Entity] = InMemoryStore()
+    client: Redis | None = None
+    if url := boot.settings.REDIS_URL.get_secret_value():  # unset (tests): in memory
+        client = Redis.from_url(url, decode_responses=True)
+        store = RedisStore(client, $Entity, prefix="$name:")
+"""
+close = """
+    if client is not None:
+        domain.closers.append(client.aclose)
+"""

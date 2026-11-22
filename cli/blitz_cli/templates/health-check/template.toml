@@ -1,0 +1,1 @@
+description = "Readiness check in src/checks/ returning {name, healthy}, with a test; added to the service's health_checks"

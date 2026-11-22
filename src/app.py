@@ -1,0 +1,191 @@
+from collections.abc import Callable, Coroutine, Iterable
+from typing import TYPE_CHECKING, Any
+
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
+from limits.aio.storage import MemoryStorage, Storage
+from starlette.routing import BaseRoute, Mount
+
+from audit.backends.loguru import LoguruAuditBackend
+from audit.integrity import NoIntegrity
+from bootstrap import validate_domain_module
+from config import Settings, get_settings
+from errors.handlers import register_error_handlers
+from lifespan import lifespan
+from middleware.stack import register_middleware
+from routes import health, metrics
+from routing import runtime_signature
+from telemetry.setup import telemetry_config
+
+if TYPE_CHECKING:
+    import types
+
+    from audit.backend import AuditBackend, AuditIntegrity
+    from auth.protocol import AuthProvider
+
+HealthCheckFn = Callable[[], Coroutine[Any, Any, dict[str, Any]]]
+
+
+def create_app(
+    *,
+    settings: Settings | None = None,
+    auth_provider: AuthProvider | None = None,
+    audit_backend: AuditBackend | None = None,
+    audit_integrity: AuditIntegrity | None = None,
+    rate_limit_storage: Storage | None = None,
+    health_checks: list[HealthCheckFn] | None = None,
+    domains: list[types.ModuleType] | None = None,
+    extra_context: dict[str, Any] | None = None,
+) -> FastAPI:
+    """
+    Create and return a fully configured FastAPI application.
+
+    Parameters
+    ----------
+    settings:
+        Overrides the global ``Settings`` instance.  Defaults to reading from
+        environment variables / ``.env``.
+    auth_provider:
+        An object implementing the :class:`~auth.protocol.AuthProvider`
+        protocol.  When ``None`` the ``get_auth_context`` dependency is a no-op.
+    audit_backend:
+        An :class:`~audit.backend.AuditBackend` implementation.
+        Defaults to :class:`~audit.backends.loguru.LoguruAuditBackend`.
+    audit_integrity:
+        An :class:`~audit.backend.AuditIntegrity` implementation that adds
+        tamper-evidence metadata (sequence numbers, checksums) to every event
+        before it reaches the backend.  Defaults to
+        :class:`~audit.integrity.NoIntegrity` (no-op).  For production
+        deployments that require compliance audit trails consider
+        :class:`~audit.integrity.SequenceIntegrity` or
+        :class:`~audit.integrity.CombinedIntegrity`.
+    rate_limit_storage:
+        An **async** :class:`limits.aio.storage.Storage` implementation used
+        by the rate limiter.  Defaults to
+        :class:`limits.aio.storage.MemoryStorage` (in-process, single-worker).
+        Pass any async ``limits`` storage to share state across workers — for
+        example ``limits.aio.storage.RedisStorage("async+redis://...")``.
+    health_checks:
+        A list of async callables each returning a dict with at least
+        ``{"name": str, "healthy": bool}``.
+    domains:
+        A list of domain modules implementing the contract described in
+        :mod:`bootstrap` (``make_router``, ``async bootstrap(boot)``, optional
+        ``register_exception_handlers``).  Each module is validated here, so a
+        malformed module fails at app creation rather than at first request.
+        Routers are mounted under ``settings.API_PREFIX`` (default ``/v1``);
+        bootstrapped instances are resolved with :func:`state.get_domain`.
+    extra_context:
+        Arbitrary key-value pairs stored on ``app.state`` and passed to every
+        domain's ``bootstrap()`` as ``boot.extra`` (e.g. database pools,
+        feature flag clients).
+    """
+    if settings is None:
+        settings = get_settings()
+
+    domain_modules = list(domains or [])
+    for module in domain_modules:
+        validate_domain_module(module)
+
+    is_prod = settings.ENVIRONMENT == "production"
+
+    # Build optional OpenAPI contact / license blocks only when values are set
+    contact: dict[str, str] | None = None
+    has_contact = (
+        settings.OPENAPI_CONTACT_NAME
+        or settings.OPENAPI_CONTACT_EMAIL
+        or settings.OPENAPI_CONTACT_URL
+    )
+    if has_contact:
+        contact = {}
+        if settings.OPENAPI_CONTACT_NAME:
+            contact["name"] = settings.OPENAPI_CONTACT_NAME
+        if settings.OPENAPI_CONTACT_EMAIL:
+            contact["email"] = settings.OPENAPI_CONTACT_EMAIL
+        if settings.OPENAPI_CONTACT_URL:
+            contact["url"] = settings.OPENAPI_CONTACT_URL
+
+    license_info: dict[str, str] | None = None
+    if settings.OPENAPI_LICENSE_NAME:
+        license_info = {"name": settings.OPENAPI_LICENSE_NAME}
+        if settings.OPENAPI_LICENSE_URL:
+            license_info["url"] = settings.OPENAPI_LICENSE_URL
+
+    servers: list[dict[str, str]] | None = (
+        [{"url": s} for s in settings.OPENAPI_SERVERS] if settings.OPENAPI_SERVERS else None
+    )
+
+    app = FastAPI(
+        title=settings.OPENAPI_TITLE,
+        description=settings.OPENAPI_DESCRIPTION,
+        version=settings.OPENAPI_VERSION,
+        contact=contact,
+        license_info=license_info,
+        servers=servers,
+        lifespan=lifespan,
+        # Hide interactive docs + schema in production
+        docs_url=None if is_prod else "/docs",
+        redoc_url=None if is_prod else "/redoc",
+        openapi_url=None if is_prod else "/openapi.json",
+        # Native FastAPI OpenTelemetry; driven by OTEL_* settings (see telemetry/setup.py)
+        telemetry=telemetry_config(settings),
+    )
+
+    # --- App state ---
+    app.state.settings = settings
+    app.state.auth_provider = auth_provider
+    app.state.audit_backend = audit_backend if audit_backend is not None else LoguruAuditBackend()
+    app.state.audit_integrity = audit_integrity if audit_integrity is not None else NoIntegrity()
+    app.state.health_checks = health_checks or []
+    app.state.metrics_require_auth = settings.METRICS_REQUIRE_AUTH
+    app.state.in_flight = 0
+    app.state.domains = {}
+    app.state.domains_by_type = {}
+    app.state._domain_modules = domain_modules
+    app.state.extra_context = dict(extra_context or {})
+
+    for key, value in app.state.extra_context.items():
+        setattr(app.state, key, value)
+
+    # --- Middleware (order defined in stack.py) ---
+    register_middleware(app, settings, rate_limit_storage=rate_limit_storage or MemoryStorage())
+
+    # --- Exception handlers ---
+    register_error_handlers(app, is_production=is_prod)
+
+    # --- Prometheus auto-instrumentation ---
+    if settings.METRICS_ENDPOINT_ENABLED:
+        from prometheus_fastapi_instrumentator import Instrumentator
+
+        Instrumentator().instrument(app)
+
+    # --- Built-in routes ---
+    app.include_router(health.router)
+    if settings.METRICS_ENDPOINT_ENABLED:
+        app.include_router(metrics.router)
+
+    # --- Domain routes (registered at app-creation time so OpenAPI schema is complete) ---
+    for domain_module in domain_modules:
+        if hasattr(domain_module, "make_router"):
+            router = domain_module.make_router()
+            _check_route_annotations(router.routes)
+            app.include_router(router, prefix=settings.API_PREFIX)
+        if hasattr(domain_module, "register_exception_handlers"):
+            domain_module.register_exception_handlers(app)
+
+    return app
+
+
+def _check_route_annotations(routes: Iterable[BaseRoute]) -> None:
+    """Fail fast on route annotations FastAPI cannot resolve (see routing.runtime_signature).
+
+    Recurses into nested routers: FastAPI mounts ``include_router`` lazily, so a
+    nested router appears as a route holding ``original_router``.
+    """
+    for route in routes:
+        if isinstance(route, APIRoute):
+            runtime_signature(route.endpoint)
+        elif (nested := getattr(route, "original_router", None)) is not None:
+            _check_route_annotations(nested.routes)
+        elif isinstance(route, Mount):
+            _check_route_annotations(route.routes)

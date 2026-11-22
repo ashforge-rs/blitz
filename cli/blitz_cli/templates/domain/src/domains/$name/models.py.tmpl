@@ -1,0 +1,23 @@
+${model_imports}
+from pydantic import BaseModel, Field
+
+
+class $Entity(BaseModel):
+    """Persisted $entity_words."""
+
+    id: str
+$model_fields
+    created_by: str | None = None
+    updated_by: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class Create${Entity}Request(BaseModel):
+$create_fields
+
+
+class Update${Entity}Request(BaseModel):
+    """All fields optional — only the ones sent are changed."""
+
+$update_fields
