@@ -5,15 +5,25 @@ re-indent or reorder it: ``project.tidy`` (Ruff isort + format) runs on edited f
 """
 
 import ast
+import re
 
 
 class EditError(Exception):
     """The module does not have the shape the edit needs."""
 
 
+#: A line as the tokenizer sees one: ends at \n, \r\n or \r only. ``str.splitlines`` also
+#: breaks at \f, \v, \x1c-\x1e, \x85 and \u2028/\u2029, which would shift every offset.
+_LINE = re.compile(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$")
+
+
+def _lines(text: str) -> list[str]:
+    return _LINE.findall(text)
+
+
 def _offset(text: str, lineno: int, col: int) -> int:
     """Character offset of an ``ast`` (1-based line, UTF-8 byte column) position."""
-    lines = text.splitlines(keepends=True)
+    lines = _lines(text)
     head = sum(len(line) for line in lines[: lineno - 1])
     return head + len(lines[lineno - 1].encode()[:col].decode())
 
@@ -24,12 +34,39 @@ def _line_start(text: str, lineno: int) -> int:
 
 def _line_end(text: str, lineno: int) -> int:
     """Offset just past line ``lineno`` (including its newline)."""
-    lines = text.splitlines(keepends=True)
+    lines = _lines(text)
     return sum(len(line) for line in lines[:lineno])
 
 
 def _end(text: str, node: ast.expr | ast.stmt) -> int:
     return _offset(text, node.end_lineno or 0, node.end_col_offset or 0)
+
+
+def _append_item(text: str, last: ast.expr | None, close: int, item: str) -> str:
+    """Add ``item`` as the last element of a bracketed sequence.
+
+    ``last`` is the current last element (None when empty) and ``close`` the offset of
+    the closing bracket. The item goes right after ``last``, never after whatever
+    follows it on its line, so a trailing ``# comment`` cannot swallow the item or the
+    bracket.
+    """
+    if last is None:
+        return text[:close] + item + text[close:]
+    at = _end(text, last)
+    newline = text.find("\n", at)
+    if newline == -1 or newline > close:  # the bracket is on the same line: `[a, b]`
+        return text[:at] + ", " + item + text[at:]
+    # Multi-line: the item gets its own line after the last element's line.
+    tail = text[at:newline]
+    comma = "" if tail.lstrip().startswith(",") else ","
+    line_start = text.rfind("\n", 0, at) + 1
+    line = text[line_start:at]
+    indent = line[: len(line) - len(line.lstrip())]
+    return text[:at] + comma + tail + "\n" + f"{indent}{item}," + text[newline:]
+
+
+def _last(nodes: list[ast.expr]) -> ast.expr | None:
+    return max(nodes, key=lambda n: (n.end_lineno or 0, n.end_col_offset or 0), default=None)
 
 
 def parse(text: str, where: str = "module") -> ast.Module:
@@ -83,15 +120,11 @@ def add_call_kwarg(text: str, func: str, key: str, expr: str, *, to_list: bool =
         if any(ast.unparse(item) == expr for item in items):
             return text
         close = _end(text, existing.value) - 1  # the `]`
-        before = text[:close].rstrip()
-        sep = "" if before.endswith(("[", ",")) else ", "
-        return before + sep + expr + text[close:]
+        return _append_item(text, _last(items), close, expr)
     value = f"[{expr}]" if to_list else expr
     close = _end(text, call) - 1  # the `)`
-    before = text[:close].rstrip()
-    has_args = bool(call.args or call.keywords)
-    sep = (" " if before.endswith(",") else ", ") if has_args else ""
-    return before + sep + f"{key}={value}" + text[close:]
+    last = _last([*call.args, *(k.value for k in call.keywords)])
+    return _append_item(text, last, close, f"{key}={value}")
 
 
 # ── classes, functions, literals ─────────────────────────────────────────────
@@ -180,16 +213,17 @@ def add_dict_entry(text: str, class_name: str, attr: str, entry: str) -> str:
             if not isinstance(value, ast.Dict):
                 raise EditError(f"{class_name}.{attr} is not a dict literal")
             close = _end(text, value) - 1  # the `}`
-            before = text[:close].rstrip()
-            sep = "" if before.endswith(("{", ",")) else ","
-            indent = " " * (node.col_offset + 4)
-            return before + sep + f"\n{indent}{entry},\n" + " " * node.col_offset + text[close:]
+            last = _last([v for v in value.values if v is not None])
+            if last is None:  # `{}`: one entry per line, as Ruff keeps a magic trailing comma
+                indent = " " * (node.col_offset + 4)
+                entry = f"\n{indent}{entry},\n" + " " * node.col_offset
+            return _append_item(text, last, close, entry)
     raise EditError(f"no {class_name}.{attr}")
 
 
 def insert_after_line(text: str, anchor: str, line: str) -> str:
     """Insert ``line`` after the first line whose stripped text is ``anchor``, same indent."""
-    lines = text.splitlines(keepends=True)
+    lines = _lines(text)
     for i, existing in enumerate(lines):
         if existing.strip() == anchor:
             indent = existing[: len(existing) - len(existing.lstrip())]
@@ -199,7 +233,7 @@ def insert_after_line(text: str, anchor: str, line: str) -> str:
 
 
 def insert_before_line(text: str, anchor: str, line: str) -> str:
-    lines = text.splitlines(keepends=True)
+    lines = _lines(text)
     for i, existing in enumerate(lines):
         if existing.strip() == anchor:
             indent = existing[: len(existing) - len(existing.lstrip())]

@@ -176,3 +176,33 @@ def test_project_layout_untouched_by_failed_endpoint(blitz, root, orders):
     blitz("g", "e", "orders", "Bad-Name")
     assert {p: p.read_text() for p in orders.glob("*.py")} == before
     assert Project(root).registered("api") == ["example", "orders"]
+
+
+def test_keyword_names_are_rejected(blitz, root, orders):
+    before = (orders / "service.py").read_text()
+    result = blitz("g", "e", "orders", "return")
+    assert result.exit_code == 1
+    assert "Python keyword" in result.output
+    assert (orders / "service.py").read_text() == before
+    assert "Python keyword" in blitz("g", "d", "import").output
+    assert "Python keyword" in blitz("g", "d", "things", "--entity", "None").output
+    assert not (root / "src/domains/import").exists()
+
+
+def test_endpoint_with_an_existing_test_writes_nothing(blitz, root, orders):
+    test = root / "tests/domains/orders/integration/test_cancel.py"
+    test.write_text("# hand-written\n")
+    before = {p: p.read_text() for p in orders.glob("*.py")}
+    result = blitz("g", "e", "orders", "cancel")
+    assert result.exit_code == 1
+    assert "nothing written" in result.output
+    assert {p: p.read_text() for p in orders.glob("*.py")} == before
+
+
+def test_domain_with_an_uneditable_registry_writes_nothing(blitz, root):
+    (root / "src/services/api/domains.py").write_text("DOMAINS = list()\n")
+    result = blitz("g", "d", "orders")
+    assert result.exit_code == 1
+    assert "nothing written" in result.output
+    assert not (root / "src/domains/orders").exists()
+    assert not (root / "tests/domains/orders").exists()

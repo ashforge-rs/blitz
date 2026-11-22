@@ -141,7 +141,7 @@ def test_add_redis(full, full_root):
     assert result.exit_code == 0, result.output
     assert (full_root / "src/store/redis.py").exists()
     config = (full_root / "src/config.py").read_text()
-    assert '    REDIS_URL: str = ""\n' in config
+    assert '    REDIS_URL: SecretStr = SecretStr("")\n' in config
     ast.parse(config)
     assert "REDIS_URL=redis://localhost:6379/0" in (full_root / ".env.example").read_text()
     assert "\n  redis:\n    image: redis:7-alpine" in (full_root / "docker-compose.yml").read_text()
@@ -188,3 +188,29 @@ def test_add_dry_run_writes_nothing(full, full_root):
     assert result.exit_code == 0, result.output
     assert "would run uv add" in result.output
     assert {p: p.read_text() for p in full_root.rglob("*") if p.is_file()} == before
+
+
+def _snapshot(root):
+    return {
+        p: p.read_bytes() for p in root.rglob("*") if p.is_file() and ".ruff_cache" not in p.parts
+    }
+
+
+def test_add_that_cannot_edit_config_writes_nothing(full, full_root):
+    config = full_root / "src/config.py"
+    config.write_text(config.read_text().replace("class Settings(", "class AppSettings("))
+    before = _snapshot(full_root)
+    result = full("add", "redis", "--skip-install")
+    assert result.exit_code == 1
+    assert _snapshot(full_root) == before
+
+
+def test_add_with_an_unwirable_domain_writes_nothing(full, full_root):
+    full("g", "d", "orders", "--no-crud")
+    domain = full_root / "src/domains/orders/domain.py"
+    domain.write_text(domain.read_text().replace("InMemoryStore()", "InMemoryStore(  )"))
+    before = _snapshot(full_root)
+    result = full("add", "redis", "-d", "orders", "--skip-install")
+    assert result.exit_code == 1
+    assert "wire the store by hand" in result.output
+    assert _snapshot(full_root) == before

@@ -249,6 +249,34 @@ def test_new_refuses_a_non_empty_directory_and_bad_input(template, tmp_path):
     )
 
 
+def test_new_defaults_to_the_checkouts_commit_on_its_origin(template, tmp_path, monkeypatch):
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "clone", "--quiet", "--bare", str(template), str(origin))
+    checkout = tmp_path / "checkout"
+    _git(tmp_path, "clone", "--quiet", str(origin), str(checkout))
+    (checkout / "notes.txt").write_text("not pushed yet\n")
+    _git(checkout, "commit", "--quiet", "-am", "local")
+    monkeypatch.setattr("blitz_cli.commands.new.HOME_TEMPLATE", checkout)
+
+    result = _invoke("new", str(tmp_path / "early"))
+    assert result.exit_code == 1
+    assert "does not have" in result.output
+    assert not (tmp_path / "early").exists()
+
+    _git(checkout, "push", "--quiet", "origin", "HEAD")
+    pushed = _git(checkout, "rev-parse", "HEAD")
+    _git(checkout, "commit", "--quiet", "--allow-empty", "-m", "later")
+    _git(checkout, "push", "--quiet", "origin", "HEAD")
+    _git(checkout, "reset", "--quiet", "--hard", pushed)  # origin's HEAD is now ahead
+    result = _invoke("new", str(tmp_path / "pushed"))
+    assert result.exit_code == 0, result.output
+    record = read_record(tmp_path / "pushed" / "pyproject.toml")
+    assert record is not None
+    assert record.source == str(origin)
+    assert record.commit == pushed
+    assert (tmp_path / "pushed" / "notes.txt").read_text() == "not pushed yet\n"
+
+
 def test_new_without_git(template, tmp_path):
     dest = _new(template, tmp_path / "my-api", "--no-git")
     assert not (dest / ".git").exists()
@@ -337,6 +365,13 @@ def test_update_dry_run_and_dirty_tree(template, tmp_path):
     result = _update(dest)
     assert result.exit_code == 1
     assert "uncommitted changes" in result.output
+
+
+def test_update_outside_git_says_so(template, tmp_path):
+    dest = _new(template, tmp_path / "my-api", "--no-git")
+    result = _update(dest)
+    assert result.exit_code == 1
+    assert "not a git work tree" in result.output
 
 
 def test_update_needs_a_record(tmp_path):

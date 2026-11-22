@@ -1,5 +1,6 @@
 """Name validation and case conversion for generated code."""
 
+import keyword
 import re
 from typing import TYPE_CHECKING
 
@@ -36,6 +37,8 @@ def check_name(name: str, kind: str) -> str | None:
     """Return why ``name`` is not a usable snake_case package name, or None."""
     if not NAME_RE.match(name):
         return f"invalid {kind} name {name!r}: use snake_case, e.g. orders"
+    if keyword.iskeyword(name):
+        return f"{kind} name {name!r} is a Python keyword"
     if name in RESERVED:
         return f"{kind} name {name!r} is reserved"
     return None
@@ -44,6 +47,8 @@ def check_name(name: str, kind: str) -> str | None:
 def check_entity(entity: str) -> str | None:
     if not ENTITY_RE.match(entity):
         return f"invalid entity {entity!r}: use PascalCase, e.g. Order"
+    if keyword.iskeyword(entity):
+        return f"entity {entity!r} is a Python keyword"
     return None
 
 

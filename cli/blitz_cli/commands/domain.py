@@ -84,6 +84,11 @@ def create_domain(
         raise fail(f"src/domains/{name} already exists")
     if register and not proj.registry(service).exists():
         raise fail(f"service {service!r} not found (src/services/{service}/domains.py)")
+    if register:
+        try:  # before anything is written: a registry we cannot edit stops here
+            proj.registration(service, name)
+        except ProjectError as exc:
+            raise fail(f"{exc}; nothing written") from exc
 
     values = naming.domain_values(name, entity, service, entity_fields)
     set_name = "domain" if crud else "domain-bare"
@@ -157,6 +162,9 @@ def domain_remove(
 ) -> None:
     """Delete a domain package and its tests, and unregister it from every service."""
     proj = project(ctx)
+    # Only a package name: `.`, `..` or a path would point rmtree at a parent directory.
+    if not naming.NAME_RE.fullmatch(name):
+        raise fail(f"invalid domain name {name!r}: a package under src/domains/, e.g. orders")
     targets = [proj.domains_dir / name, proj.root / "tests" / "domains" / name]
     services = proj.services_serving(name)
     if not any(t.exists() for t in targets) and not services:

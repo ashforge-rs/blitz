@@ -101,14 +101,22 @@ def plan(base: dict[str, bytes], theirs: dict[str, bytes], ours: dict[str, bytes
     return steps
 
 
-def _clean_worktree(root: Path) -> bool:
+def _worktree_problem(root: Path) -> str | None:
+    """Why the project's git tree is not ready for an update, or None."""
     result = subprocess.run(  # noqa: S603
         ["git", "-C", str(root), "status", "--porcelain"],  # noqa: S607
         capture_output=True,
         text=True,
         check=False,
     )
-    return result.returncode == 0 and not result.stdout.strip()
+    if result.returncode != 0:
+        return (
+            "not a git work tree: commit the project to git first, so `git diff` shows "
+            "what the update changed (or pass --allow-dirty)"
+        )
+    if result.stdout.strip():
+        return "uncommitted changes: commit or stash them first (or pass --allow-dirty)"
+    return None
 
 
 def update(
@@ -145,8 +153,8 @@ def update(
             "no [tool.blitz.template] in pyproject.toml (made by `blitz new`); "
             "nothing to update from"
         )
-    if not dry_run and not allow_dirty and not _clean_worktree(proj.root):
-        raise fail("uncommitted changes: commit or stash them first (or pass --allow-dirty)")
+    if not dry_run and not allow_dirty and (problem := _worktree_problem(proj.root)):
+        raise fail(problem)
     origin = source or record.source
 
     try:

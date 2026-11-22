@@ -15,6 +15,8 @@ SERVICE ?= api
 PY_DIRS := src/ tests/ scripts/
 PORT    ?= 8000
 BLITZ   := uv run --project cli blitz
+# origin/HEAD, else origin/main or origin/master (`=`: git runs only when used)
+ORIGIN_DEFAULT = $(shell git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || (git rev-parse --verify --quiet origin/main >/dev/null && echo origin/main) || echo origin/master)
 IMAGE   ?= ghcr.io/$(shell git config --get remote.origin.url | sed 's/.*github.com[:/]//' | sed 's/\.git$$//' | tr '[:upper:]' '[:lower:]')-$(SERVICE)
 
 help: ## Show this help
@@ -41,8 +43,8 @@ service: ## Scaffold a service: main.py, domains.py, Dockerfile (NAME=worker)
 routes: ## List every route of every service: method, path, owner, auth
 	$(BLITZ) routes
 
-openapi-check: ## Fail on breaking API changes against a git ref (REF=origin/master)
-	$(BLITZ) openapi --diff $(or $(REF),origin/master) --check
+openapi-check: ## Fail on breaking API changes against a git ref (REF=ref; default: origin's default branch)
+	$(BLITZ) openapi --diff $(or $(REF),$(ORIGIN_DEFAULT)) --check
 
 update: ## Merge boilerplate changes since this project was created (blitz new)
 	$(BLITZ) update

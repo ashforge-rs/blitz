@@ -1,6 +1,7 @@
 """Generators that edit an existing domain: ``g endpoint`` and ``g error-code``."""
 
 import ast
+import keyword
 import re
 from dataclasses import dataclass
 from enum import StrEnum
@@ -150,6 +151,8 @@ def endpoint(
     info = inspect_domain(proj, domain)
     if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
         raise fail(f"invalid endpoint name {name!r}: use snake_case, e.g. mark_paid")
+    if keyword.iskeyword(name):
+        raise fail(f"endpoint name {name!r} is a Python keyword; pick another name")
     id_param = f"{info.entity_snake}_id"
     subject = info.name if collection else info.entity_snake
     route_fn = f"{name}_{subject}"
@@ -234,6 +237,18 @@ def endpoint(
     except EditError as exc:
         raise fail(f"src/domains/{domain}: {exc}") from exc
 
+    with_tests = config(ctx).tests if tests is None else tests
+    services = proj.services_serving(domain)
+    test_path = proj.root / "tests" / "domains" / domain / "integration" / f"test_{name}.py"
+    if with_tests and services and test_path.exists():  # checked before anything is written
+        raise fail(f"{proj.rel(test_path)} already exists; nothing written")
+    edits = ((info.files["service"], service_text), (info.files["domain"], domain_text))
+    for edited, text in edits:
+        try:
+            parse(text, proj.rel(edited))
+        except EditError as exc:
+            raise fail(f"{exc}; nothing written") from exc
+
     written = [
         write_edit(
             ctx, info.files["service"], service_text, dry_run=dry_run, what=f"{info.service}.{name}"
@@ -246,12 +261,7 @@ def endpoint(
             what=f"{method.value.upper()} {path}",
         ),
     ]
-    with_tests = config(ctx).tests if tests is None else tests
-    services = proj.services_serving(domain)
     if with_tests and services:
-        test_path = proj.root / "tests" / "domains" / domain / "integration" / f"test_{name}.py"
-        if test_path.exists():
-            raise fail(f"{proj.rel(test_path)} already exists")
         url = f"/v1/{info.route}/{action}" if collection else f"/v1/{info.route}/missing/{action}"
         if collection:
             expected = "200" if method != Method.delete else "204"

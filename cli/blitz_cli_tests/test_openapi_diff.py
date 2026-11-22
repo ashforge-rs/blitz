@@ -204,3 +204,69 @@ def test_recursive_schemas_terminate():
         "components": {"schemas": {"Node": node}},
     }
     assert diff(doc, copy.deepcopy(doc)) == []
+
+
+def test_tighter_request_values_are_breaking_looser_are_not():
+    note = lambda d: d["components"]["schemas"]["CreateOrder"]["properties"]["note"]  # noqa: E731
+    op = "POST /v1/orders/"
+
+    def limit(value):
+        return lambda d: note(d).update(maxLength=value)
+
+    assert (op, "request body.note: maxLength none → 10") in _breaking(limit(10))
+    tighter = copy.deepcopy(BASE)
+    limit(100)(tighter)
+    narrower = copy.deepcopy(tighter)
+    limit(10)(narrower)
+    assert [(c.breaking, c.message) for c in diff(tighter, narrower)] == [
+        (True, "request body.note: maxLength 100 → 10")
+    ]
+    assert [c.breaking for c in diff(narrower, tighter)] == [False]  # raised: looser
+    assert (op, "request body.note: pattern none → '^[a-z]+$'") in _breaking(
+        lambda d: note(d).update(pattern="^[a-z]+$")
+    )
+    assert (op, "request body.total: minimum none → 0") in _breaking(
+        lambda d: d["components"]["schemas"]["CreateOrder"]["properties"]["total"].update(minimum=0)
+    )
+
+
+def test_constraints_on_an_optional_value_are_compared():
+    def optional(max_length):
+        def mutate(d):
+            d["components"]["schemas"]["CreateOrder"]["properties"]["note"] = {
+                "anyOf": [{"type": "string", "maxLength": max_length}, {"type": "null"}]
+            }
+
+        return mutate
+
+    old, new = copy.deepcopy(BASE), copy.deepcopy(BASE)
+    optional(255)(old)
+    optional(20)(new)
+    assert [(c.breaking, c.message) for c in diff(old, new)] == [
+        (True, "request body.note: maxLength 255 → 20")
+    ]
+
+
+def test_closing_a_request_object_is_breaking():
+    schema = lambda d: d["components"]["schemas"]["CreateOrder"]  # noqa: E731
+    op = "POST /v1/orders/"
+    assert (op, "request body: no longer accepts extra properties") in _breaking(
+        lambda d: schema(d).update(additionalProperties=False)
+    )
+    closed = copy.deepcopy(BASE)
+    schema(closed)["additionalProperties"] = False
+    without_note = copy.deepcopy(closed)
+    schema(without_note)["properties"].pop("note")
+    assert [(c.breaking, c.message) for c in diff(closed, without_note)] == [
+        (True, "request body.note: removed (now rejected)")
+    ]
+
+
+def test_response_constraints_are_not_breaking():
+    def limit(d):
+        d["components"]["schemas"]["Order"]["properties"]["id"]["maxLength"] = 36
+
+    assert _breaking(limit) == set()
+    assert (False, "GET /v1/orders/{order_id}", "response 200.id: maxLength none → 36") in (
+        _changes(limit)
+    )

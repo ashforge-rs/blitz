@@ -16,12 +16,13 @@ also declares what to wire (all optional):
 import re
 import subprocess
 import tomllib
+from dataclasses import dataclass
 from string import Template
 from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
-from blitz_cli.edit import EditError, add_class_field, add_import
+from blitz_cli.edit import EditError, add_class_field, add_import, parse
 from blitz_cli.templates import MANIFEST, TemplateError, available
 
 from .code import inspect_domain
@@ -123,11 +124,18 @@ def add(
     already = bool(settings_meta) and all(s["name"] in existing_fields for s in settings_meta)
     written: list[Path | None] = []
 
+    # Plan every edit that can fail before writing anything, so a refusal leaves the
+    # project as it was. (generate() checks all its files before it writes one.)
+    settings_edits = [] if already else _plan_settings(ctx, settings_meta, name)
+    domain_edits = [
+        _plan_domain(ctx, meta.get("domain"), domain_name, name) for domain_name in domain or []
+    ]
+
     if already:
         typer.echo(f"  {name} is already set up; wiring domains only")
     else:
         written += generate(ctx, f"{PREFIX}{name}", {}, dry_run=dry_run, tests=tests)
-        written += _add_settings(ctx, settings_meta, name, dry_run=dry_run)
+        written += [_write(ctx, edit, dry_run=dry_run) for edit in settings_edits]
         written.append(_add_compose(ctx, meta.get("compose"), dry_run=dry_run))
         written.append(_add_mypy_ignore(ctx, meta.get("mypy_ignore", []), dry_run=dry_run))
         if check := meta.get("health_check"):
@@ -144,8 +152,7 @@ def add(
                     what=f"health_checks += {check}",
                 )
             )
-    for domain_name in domain or []:
-        written.append(_wire_domain(ctx, meta.get("domain"), domain_name, name, dry_run=dry_run))
+    written += [_write(ctx, edit, dry_run=dry_run) for edit in domain_edits if edit is not None]
 
     deps: list[str] = meta.get("dependencies", []) if not already else []
     if deps and not dry_run and not skip_install:
@@ -164,9 +171,29 @@ def add(
         )
 
 
-def _add_settings(
-    ctx: typer.Context, settings: list[dict[str, str]], integration: str, *, dry_run: bool
-) -> list[Path | None]:
+@dataclass(frozen=True, slots=True)
+class _Edit:
+    path: Path
+    text: str
+    what: str
+
+
+def _write(ctx: typer.Context, edit: _Edit, *, dry_run: bool) -> Path | None:
+    return write_edit(ctx, edit.path, edit.text, dry_run=dry_run, what=edit.what)
+
+
+def _checked(ctx: typer.Context, path: Path, text: str, what: str) -> _Edit:
+    """An edit whose result is still valid Python (checked before anything is written)."""
+    try:
+        parse(text, project(ctx).rel(path))
+    except EditError as exc:
+        raise fail(f"{exc}; nothing written") from exc
+    return _Edit(path, text, what)
+
+
+def _plan_settings(
+    ctx: typer.Context, settings: list[dict[str, str]], integration: str
+) -> list[_Edit]:
     proj = project(ctx)
     config_py = proj.root / "src" / "config.py"
     env_example = proj.root / ".env.example"
@@ -189,26 +216,14 @@ def _add_settings(
                 env_lines += [f"# {setting['comment']}", setting["env"]]
     except EditError as exc:
         raise fail(f"src/config.py: {exc}") from exc
-    out = [
-        write_edit(
-            ctx, config_py, text, dry_run=dry_run, what=", ".join(s["name"] for s in settings)
-        )
-    ]
+    out = [_checked(ctx, config_py, text, ", ".join(s["name"] for s in settings))]
     if env_lines:
         block = (
             f"\n# {integration.capitalize()} (blitz add {integration})\n"
             + "\n".join(env_lines)
             + "\n"
         )
-        out.append(
-            write_edit(
-                ctx,
-                env_example,
-                env_text.rstrip("\n") + "\n" + block,
-                dry_run=dry_run,
-                what="documented",
-            )
-        )
+        out.append(_Edit(env_example, env_text.rstrip("\n") + "\n" + block, "documented"))
     return out
 
 
@@ -250,14 +265,9 @@ def _add_mypy_ignore(ctx: typer.Context, modules: list[str], *, dry_run: bool) -
     return write_edit(ctx, path, text, dry_run=dry_run, what=f"mypy ignores {', '.join(modules)}")
 
 
-def _wire_domain(
-    ctx: typer.Context,
-    snippet: dict[str, Any] | None,
-    domain: str,
-    integration: str,
-    *,
-    dry_run: bool,
-) -> Path | None:
+def _plan_domain(
+    ctx: typer.Context, snippet: dict[str, Any] | None, domain: str, integration: str
+) -> _Edit | None:
     if not snippet:
         raise fail(f"integration {integration!r} has no store to wire into a domain")
     info = inspect_domain(project(ctx), domain)
@@ -295,6 +305,9 @@ def _wire_domain(
     if store is None:  # unreachable: the store line precedes the return line
         raise fail("internal error: store line moved")
     text = text[: store.start()] + store_code + text[store.end() :]
-    for line in snippet.get("imports", []):
-        text = add_import(text, line)
-    return write_edit(ctx, path, text, dry_run=dry_run, what=f"bootstrap() uses {integration}")
+    try:
+        for line in snippet.get("imports", []):
+            text = add_import(text, line)
+    except EditError as exc:
+        raise fail(f"src/domains/{domain}/domain.py: {exc}") from exc
+    return _checked(ctx, path, text, f"bootstrap() uses {integration}")

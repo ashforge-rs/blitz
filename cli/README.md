@@ -92,9 +92,11 @@ in-memory store. Run it again with `--domain` to switch more domains.
 
 Both build the app in the project's venv (`uv sync` first). `--diff REF` runs REF's `src/`
 with today's dependencies. **Breaking**: removed operations, 2xx responses or parameters;
-newly required parameters, bodies or body properties; a request that accepts fewer types or
-enum values; a response that drops a property, may omit one it always had, or returns new
-types or enum values. Everything else is listed as a non-breaking change.
+newly required parameters, bodies or body properties; a request that accepts fewer types,
+enum values or values (a lower `maxLength`/`maximum`, a higher minimum, a new `pattern`,
+`format`, `multipleOf` or `const`, `additionalProperties: false`); a response that drops a
+property, may omit one it always had, or returns new types or enum values. Everything else,
+including changed response constraints, is listed as a non-breaking change.
 
 ## Projects from the boilerplate: `blitz new` / `blitz update`
 
@@ -106,7 +108,8 @@ blitz update [--to v0.3.0] [--dry-run]        # or `make update`
 ```
 
 `new` copies the boilerplate at a commit (`--from <git url|path>`, `--ref`; default: the
-checkout this CLI belongs to, recorded by its `origin` URL) and renames it: package and
+commit the checkout this CLI belongs to is on, fetched from and recorded by its `origin` URL,
+so push it first) and renames it: package and
 lockfile, `OPENAPI_TITLE`, `OTEL_SERVICE_NAME`, Dockerfile labels, `infra/`, `CODEOWNERS`,
 README title; version 0.1.0; `--python` also moves `requires-python`, Ruff/mypy targets, base
 images and CI. `CHANGELOG.md` and `examples/` are left out; the example domain stays (it is

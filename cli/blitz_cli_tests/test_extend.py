@@ -108,3 +108,31 @@ def test_metric_rejects(full, args, error):
 def test_metric_refuses_duplicate(full):
     assert full("g", "m", "x_total").exit_code == 0
     assert "already defined" in full("g", "m", "x_total").output
+
+
+def test_wiring_survives_trailing_comments(full, full_root):
+    main = full_root / "src/services/api/main.py"
+    main.write_text(
+        main.read_text().replace(
+            "app = create_app(settings=settings, domains=DOMAINS)",
+            "app = create_app(\n    settings=settings,\n    domains=DOMAINS,  # see domains.py\n)",
+        )
+    )
+    assert full("g", "hc", "s3").exit_code == 0
+    assert full("g", "auth", "jwt").exit_code == 0
+    text = _text(full_root, "src/services/api/main.py")
+    assert "# see domains.py" in text
+    assert "health_checks=[check_s3]" in text
+    assert "auth_provider=JwtAuthProvider()" in text
+
+
+def test_an_edit_that_breaks_the_module_is_not_written(full, full_root, monkeypatch):
+    monkeypatch.setattr(
+        "blitz_cli.commands.extend.add_call_kwarg", lambda text, *a, **k: text + "def (\n"
+    )
+    main = full_root / "src/services/api/main.py"
+    before = main.read_text()
+    result = full("g", "hc", "s3")
+    assert "not wired" in result.output
+    assert "does not parse" in result.output
+    assert main.read_text() == before

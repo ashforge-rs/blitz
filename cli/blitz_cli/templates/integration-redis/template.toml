@@ -5,8 +5,8 @@ health_module = "checks.redis"
 
 [[settings]]
 name = "REDIS_URL"
-annotation = "str"
-default = '""'
+annotation = "SecretStr"  # a Redis URL can carry a password (redis://:pw@host)
+default = 'SecretStr("")'
 comment = "Redis for RedisStore and its health check. Empty: stores stay in memory."
 env = "REDIS_URL=redis://localhost:6379/0"
 
@@ -29,8 +29,8 @@ imports = [
 store = """
     store: KeyValueStore[str, $Entity] = InMemoryStore()
     client: Redis | None = None
-    if boot.settings.REDIS_URL:  # unset (tests, local runs): in memory
-        client = Redis.from_url(boot.settings.REDIS_URL, decode_responses=True)
+    if url := boot.settings.REDIS_URL.get_secret_value():  # unset (tests): in memory
+        client = Redis.from_url(url, decode_responses=True)
         store = RedisStore(client, $Entity, prefix="$name:")
 """
 close = """

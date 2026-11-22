@@ -7,7 +7,7 @@ from config import get_settings
 
 async def check_redis() -> dict[str, Any]:
     """Readiness of Redis (REDIS_URL); healthy and skipped when it is not configured."""
-    url = get_settings().REDIS_URL
+    url = get_settings().REDIS_URL.get_secret_value()
     if not url:
         return {"name": "redis", "healthy": True, "skipped": "REDIS_URL not set"}
     client = Redis.from_url(url, socket_connect_timeout=2)

@@ -15,6 +15,7 @@ from blitz_cli.edit import (
     add_to_all,
     insert_after_line,
     insert_before_line,
+    parse,
 )
 
 from .common import (
@@ -73,6 +74,7 @@ def _wire(
                 text = insert_before_line(text, args[0], args[1])
             elif kind == "export":
                 text = add_to_all(text, args[0])
+        parse(text, proj.rel(path))  # the edit must leave valid Python
     except EditError as exc:
         warn(f"not wired: {proj.rel(path)}: {exc}; {what} by hand")
         return None

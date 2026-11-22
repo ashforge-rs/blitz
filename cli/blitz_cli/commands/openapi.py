@@ -72,7 +72,8 @@ def openapi(
     The schema comes from the real app (the service's DOMAINS included). --diff REF builds
     the app as it was at REF, using today's dependencies; --against compares with a
     committed openapi.json. Breaking: removed operations, responses or parameters,
-    newly required inputs, narrower request types, removed or loosened response fields.
+    newly required inputs, narrower request types or values (tighter bounds, a new
+    pattern or format, no extra properties), removed or loosened response fields.
     """
     proj = project(ctx)
     service = service_or_default(ctx, service)

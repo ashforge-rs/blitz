@@ -5,12 +5,16 @@ Breaking means an existing client can stop working:
 - an operation, a response status (2xx) or a parameter is removed;
 - a parameter or a request-body property becomes required, or a request body appears
   as required;
-- a request accepts fewer types or enum values than before;
+- a request accepts fewer types or enum values than before, or tighter values: a lower
+  maximum (``maxLength``, ``maximum``, ``maxItems``, …), a higher minimum, a new or
+  changed ``pattern``, ``format``, ``multipleOf`` or ``const``, or no extra properties
+  (``additionalProperties: false``, which also makes a removed property breaking);
 - a response drops a property, may now omit one it always had, or returns types or
   enum values it never did.
 
-Everything else (new operations, optional parameters, extra response fields) is listed
-as non-breaking. ``$ref`` are resolved inside each document; recursion is bounded.
+Everything else (new operations, optional parameters, extra response fields, looser
+request values, any change of a response's constraints) is listed as non-breaking.
+``$ref`` are resolved inside each document; recursion is bounded.
 """
 
 from dataclasses import dataclass
@@ -18,6 +22,11 @@ from typing import Any
 
 METHODS = ("get", "put", "post", "delete", "patch", "options", "head", "trace")
 _MAX_DEPTH = 12
+#: Bounds that admit fewer values as they go down / up.
+_UPPER = ("maxLength", "maximum", "exclusiveMaximum", "maxItems", "maxProperties")
+_LOWER = ("minLength", "minimum", "exclusiveMinimum", "minItems", "minProperties")
+#: Constraints without a direction: adding or changing one narrows what is accepted.
+_EXACT = ("pattern", "format", "multipleOf", "const")
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +97,23 @@ def _object_part(doc: _Doc, schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
+def _value_part(doc: _Doc, schema: dict[str, Any]) -> dict[str, Any]:
+    """Where a value's constraints live: the schema, or its one non-null anyOf/oneOf member
+    (``str | None`` with ``max_length`` puts ``maxLength`` on the string member)."""
+    schema = doc.resolve(schema)
+    for key in ("anyOf", "oneOf"):
+        if key in schema:
+            members = [m for m in schema[key] if _types(doc, m) != {"null"}]
+            return _value_part(doc, members[0]) if len(members) == 1 else schema
+    if "allOf" in schema and len(schema["allOf"]) == 1:
+        return _value_part(doc, schema["allOf"][0])
+    return schema
+
+
+def _show(value: object) -> str:
+    return "none" if value is None else repr(value)
+
+
 class _Comparer:
     def __init__(self, old: dict[str, Any], new: dict[str, Any]) -> None:
         self.old, self.new = _Doc(old), _Doc(new)
@@ -134,14 +160,21 @@ class _Comparer:
             if (request and added) or (not request and removed):
                 self.add(False, op, f"{where}: enum now {n_enum}")
 
+        self.constraints(op, where, _value_part(self.old, o), _value_part(self.new, n), request)
+
         o_obj, n_obj = _object_part(self.old, o), _object_part(self.new, n)
+        closed = n_obj.get("additionalProperties") is False  # unknown properties → 422
+        if request and o_obj and closed and o_obj.get("additionalProperties") is not False:
+            self.add(True, op, f"{where}: no longer accepts extra properties")
         o_props, n_props = o_obj.get("properties", {}), n_obj.get("properties", {})
         if isinstance(o_props, dict) and isinstance(n_props, dict) and (o_props or n_props):
             o_req, n_req = set(o_obj.get("required", [])), set(n_obj.get("required", []))
             for name in sorted(o_props.keys() | n_props.keys()):
                 field = f"{where}.{name}"
                 if name not in n_props:
-                    if request:
+                    if request and closed:
+                        self.add(True, op, f"{field}: removed (now rejected)")
+                    elif request:
                         self.add(False, op, f"{field}: removed (now ignored)")
                     else:
                         self.add(True, op, f"{field}: removed")
@@ -161,6 +194,24 @@ class _Comparer:
 
         if "array" in o_types & n_types and "items" in o and "items" in n:
             self.schema(op, f"{where}[]", o["items"], n["items"], request=request, depth=depth + 1)
+
+    def constraints(
+        self, op: str, where: str, old: dict[str, Any], new: dict[str, Any], request: bool
+    ) -> None:
+        """Value constraints: tighter ones break a request; response ones are informational."""
+        for key in (*_UPPER, *_LOWER, *_EXACT):
+            o_val, n_val = old.get(key), new.get(key)
+            if o_val == n_val:
+                continue
+            if key in _EXACT:
+                tighter = n_val is not None
+            elif o_val is None or n_val is None:
+                tighter = o_val is None  # added: tighter; removed: looser
+            elif not (isinstance(o_val, int | float) and isinstance(n_val, int | float)):
+                tighter = True  # not comparable: assume the worst
+            else:
+                tighter = n_val < o_val if key in _UPPER else n_val > o_val
+            self.add(request and tighter, op, f"{where}: {key} {_show(o_val)} → {_show(n_val)}")
 
     # ── operations ───────────────────────────────────────────────────────────
 

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Annotated
 import typer
 
 from blitz_cli.config import BlitzConfig, ConfigError, load_config
+from blitz_cli.edit import EditError, parse
 from blitz_cli.project import Project, ProjectError, find_root, tidy
 from blitz_cli.templates import TemplateError, TemplateSet, load
 
@@ -179,10 +180,18 @@ def generate(
 def write_edit(
     ctx: typer.Context, path: Path, new_text: str, *, dry_run: bool, what: str
 ) -> Path | None:
-    """Write an edited file (or report it in a dry run); return it for ``finish``."""
+    """Write an edited file (or report it in a dry run); return it for ``finish``.
+
+    An edited Python file must still parse: a broken edit fails instead of being written.
+    """
     rel = project(ctx).rel(path)
     if path.exists() and path.read_text() == new_text:
         return None
+    if path.suffix == ".py":
+        try:
+            parse(new_text, rel)
+        except EditError as exc:
+            raise fail(f"{exc}; nothing written to {rel}, edit it by hand") from exc
     typer.echo(f"  {'would update' if dry_run else 'updated'} {rel} ({what})")
     if dry_run:
         return None

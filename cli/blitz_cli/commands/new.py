@@ -38,6 +38,17 @@ def default_source() -> str:
     return url if result.returncode == 0 and url else str(HOME_TEMPLATE)
 
 
+def checkout_commit() -> str | None:
+    """The commit the boilerplate checkout this CLI runs from is on."""
+    result = subprocess.run(  # noqa: S603
+        ["git", "-C", str(HOME_TEMPLATE), "rev-parse", "--verify", "--quiet", "HEAD"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else None
+
+
 def _git(directory: Path, *args: str) -> bool:
     result = subprocess.run(["git", "-C", str(directory), *args], capture_output=True, check=False)  # noqa: S603, S607
     return result.returncode == 0
@@ -69,17 +80,24 @@ def new(
             show_default="the boilerplate this CLI belongs to (its origin URL)",
         ),
     ] = None,
-    ref: Annotated[str, typer.Option(help="Template branch, tag or commit.")] = "HEAD",
+    ref: Annotated[
+        str | None,
+        typer.Option(
+            help="Template branch, tag or commit.",
+            show_default="this checkout's commit; with --from, the source's HEAD",
+        ),
+    ] = None,
     git_init: Annotated[
         bool, typer.Option("--git/--no-git", help="git init and commit the new project.")
     ] = True,
 ) -> None:
     """Create a project from the boilerplate: renamed, configured, and recorded for updates.
 
-    Copies the template at one commit (never uncommitted changes), renames it
-    (package, lock, OPENAPI_TITLE, OTEL_SERVICE_NAME, Dockerfile labels, infra/,
-    CODEOWNERS, README title), resets the version to 0.1.0, and drops CHANGELOG.md
-    and examples/. [tool.blitz.template] in pyproject.toml records the source,
+    Copies the template at one commit, never uncommitted changes: by default the commit
+    this checkout is on, fetched from its origin so `blitz update` works anywhere (push
+    it first). Renames it (package, lock, OPENAPI_TITLE, OTEL_SERVICE_NAME, Dockerfile
+    labels, infra/, CODEOWNERS, README title), resets the version to 0.1.0, and drops
+    CHANGELOG.md and examples/. [tool.blitz.template] in pyproject.toml records the source,
     commit and these answers, which `blitz update` uses to merge later template
     changes. The example domain stays: AGENTS.md and the tests use it as the
     reference (`blitz domain remove example` once you have your own).
@@ -95,11 +113,22 @@ def new(
         examples=examples,
     )
     origin = source or default_source()
+    # Without --from, the checkout's own commit: cloning `origin` alone would give its
+    # default branch and silently leave out what this checkout has on top of it.
+    local = checkout_commit() if source is None and ref is None else None
     try:
         answers.check()
         with tempfile.TemporaryDirectory(prefix="blitz-new-") as tmp:
             repo = clone(origin, Path(tmp) / "template")
-            commit = resolve(repo, ref)
+            try:
+                commit = resolve(repo, local or ref or "HEAD")
+            except ScaffoldError:
+                if local is None:
+                    raise
+                raise ScaffoldError(
+                    f"this checkout is on {local[:12]}, which {origin} does not have; "
+                    f"push it, pass --ref, or --from {HOME_TEMPLATE}"
+                ) from None
             files = render(tree(repo, commit), answers)
     except ScaffoldError as exc:
         raise fail(str(exc)) from exc

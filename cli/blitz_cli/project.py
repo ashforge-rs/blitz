@@ -64,6 +64,17 @@ class Project:
 
     def register(self, service: str, domain: str) -> bool:
         """Add ``domain`` to the service's DOMAINS list. False if it was already there."""
+        text = self.registration(service, domain)
+        if text is None:
+            return False
+        self.registry(service).write_text(text)
+        return True
+
+    def registration(self, service: str, domain: str) -> str | None:
+        """The registry with ``domain`` added (None if it is already there); writes nothing.
+
+        Raises ProjectError when the registry is missing or has no ``DOMAINS = [...]``.
+        """
         path = self.registry(service)
         if not path.exists():
             raise ProjectError(f"{self.rel(path)} not found")
@@ -71,7 +82,7 @@ class Project:
         alias = f"{domain}_domain"
         import_line = f"from domains.{domain} import domain as {alias}\n"
         if import_line in text:
-            return False
+            return None
         listing = _LIST.search(text)
         if listing is None:
             raise ProjectError(f"no `DOMAINS = [...]` list in {self.rel(path)}")
@@ -98,8 +109,7 @@ class Project:
             anchor = re.search(r"^(if TYPE_CHECKING:|DOMAINS:)", text, re.MULTILINE)
             at = anchor.start() if anchor else 0
             import_line += "\n"
-        path.write_text(text[:at] + import_line + text[at:])
-        return True
+        return text[:at] + import_line + text[at:]
 
     def unregister(self, service: str, domain: str) -> bool:
         """Remove ``domain`` from the service's DOMAINS list. False if it was not there."""

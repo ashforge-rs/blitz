@@ -1,5 +1,7 @@
 """The ``blitz`` commands, run against a throwaway project."""
 
+import pytest
+
 from blitz_cli.project import Project
 
 
@@ -80,6 +82,16 @@ def test_domain_remove(blitz, root):
 
 def test_domain_remove_unknown(blitz):
     assert blitz("domain", "remove", "nope", "--yes").exit_code == 1
+
+
+@pytest.mark.parametrize("name", [".", "..", "../..", "orders/..", "/etc", "orders\n"])
+def test_domain_remove_refuses_paths(blitz, root, name):
+    assert blitz("g", "d", "orders").exit_code == 0
+    before = sorted(p for p in root.rglob("*"))
+    result = blitz("domain", "remove", name, "--yes")
+    assert result.exit_code == 1
+    assert "invalid domain name" in result.output
+    assert sorted(p for p in root.rglob("*")) == before
 
 
 def test_service_new_and_list(blitz, root):

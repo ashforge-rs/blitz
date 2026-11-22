@@ -37,7 +37,11 @@ store = """
     if dsn := boot.settings.DATABASE_URL.get_secret_value():  # unset (tests): in memory
         pool = await asyncpg.create_pool(dsn)
         store = PostgresStore(pool, $Entity, namespace="$name")
-        await store.ensure_table()
+        try:
+            await store.ensure_table()
+        except BaseException:  # not handed to the domain yet, so aclose() would miss it
+            await pool.close()
+            raise
 """
 close = """
     if pool is not None:
