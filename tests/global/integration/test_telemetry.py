@@ -31,7 +31,8 @@ async def test_requests_are_traced_natively_when_enabled():
     # Runs the enabled app first: lifespan installs the global TracerProvider,
     # which the SDK only allows once per process.
     exporter = InMemorySpanExporter()
-    enabled = create_app(settings=_settings(OTEL_ENABLED=True), audit_backend=NoopAuditBackend())
+    enabled_settings = _settings(OTEL_ENABLED=True)
+    enabled = create_app(settings=enabled_settings, audit_backend=NoopAuditBackend())
     disabled = create_app(settings=_settings(OTEL_ENABLED=False), audit_backend=NoopAuditBackend())
 
     async with LifespanManager(enabled), LifespanManager(disabled):
@@ -47,7 +48,8 @@ async def test_requests_are_traced_natively_when_enabled():
     server_spans = [s for s in exporter.get_finished_spans() if s.kind is trace.SpanKind.SERVER]
     assert [s.name for s in server_spans] == ["GET /live"]
     assert server_spans[0].attributes["http.route"] == "/live"
-    assert server_spans[0].resource.attributes["service.name"] == "blitz"
+    service_name = enabled_settings.OTEL_SERVICE_NAME  # the project's name, not a literal
+    assert server_spans[0].resource.attributes["service.name"] == service_name
 
 
 def test_parse_otel_headers():
